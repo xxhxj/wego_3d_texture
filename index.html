@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>包装样机</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body data-page="edit">
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path
+                fill="currentColor"
+                d="M12 2.2 21 7v10l-9 4.8L3 17V7l9-4.8Zm0 2.2L5.2 8.1 12 11.7l6.8-3.6L12 4.4ZM4.5 9.2V16l6.7 3.6V12.8L4.5 9.2Zm8.3 10.4L19.5 16V9.2l-6.7 3.6v6.8Z"
+              />
+            </svg>
+          </span>
+          <span>包装样机</span>
+        </div>
+        <div class="top-actions">
+          <button id="export-top" class="btn primary" type="button">导出</button>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <nav class="rail" aria-label="页面">
+          <button class="rail-btn active" type="button" data-page="edit">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="1.7" d="M8 7h8M8 12h8M8 17h5" />
+              <path fill="currentColor" d="M16.2 14.2 19 17l-1.1 1.1-2.8-2.8a3.2 3.2 0 1 1 1.1-1.1Z" />
+            </svg>
+            编辑
+          </button>
+          <button class="rail-btn" type="button" data-page="mockup">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+              <path fill="currentColor" d="M12 3.2 20 7.2v9.6L12 20.8 4 16.8V7.2L12 3.2Zm0 2.1L6.2 8.1 12 11l5.8-2.9L12 5.3ZM5.5 9.3v6.4l5.5 2.7v-6.4L5.5 9.3Zm7.5 9.1 5.5-2.7V9.3l-5.5 2.7v6.4Z" />
+            </svg>
+            样机
+          </button>
+        </nav>
+        <aside class="panel">
+          <div data-page-panel="edit">
+          <section class="block">
+            <div class="block-title">上传包装图</div>
+            <label class="upload" id="upload-zone">
+              <input id="file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+              <span class="upload-icon" aria-hidden="true">↑</span>
+              <span class="upload-copy">
+                <strong>点击或拖拽图片</strong>
+                <small>JPG、PNG、WebP，放到展开面上再调整</small>
+              </span>
+            </label>
+            <div class="row">
+              <button id="sample" class="btn ghost" type="button">载入示例图</button>
+              <button id="clear" class="btn ghost" type="button">清除贴图</button>
+            </div>
+            <p id="file-name" class="file-name">当前：示例包装图</p>
+          </section>
+
+          <section class="block">
+            <div class="block-title">盒型尺寸</div>
+            <div class="sizes">
+              <label>
+                <span>宽 mm</span>
+                <input id="size-w" type="number" min="30" max="600" value="120" />
+              </label>
+              <label>
+                <span>深 mm</span>
+                <input id="size-d" type="number" min="20" max="600" value="60" />
+              </label>
+              <label>
+                <span>高 mm</span>
+                <input id="size-h" type="number" min="30" max="800" value="160" />
+              </label>
+            </div>
+          </section>
+
+          <section class="block">
+            <div class="block-title">纸张</div>
+            <div class="papers" id="papers">
+              <button type="button" class="paper active" data-paper="white">
+                <i style="background: #f4f0e8"></i>白卡纸
+              </button>
+              <button type="button" class="paper" data-paper="kraft">
+                <i style="background: #c6a36a"></i>牛皮纸
+              </button>
+              <button type="button" class="paper" data-paper="grey">
+                <i style="background: #d5d5d5"></i>灰板纸
+              </button>
+            </div>
+            <label class="color-row">
+              内侧颜色
+              <input id="inside" type="color" value="#f6f1e7" />
+            </label>
+          </section>
+          </div>
+          <div data-page-panel="mockup" hidden>
+            <section class="block">
+              <div id="model-cats" class="model-cats"></div>
+              <div class="block-title" id="model-heading">盒子</div>
+              <p class="hint">点一个样例，替换右侧正在看的模型。</p>
+              <div id="model-grid" class="model-grid"></div>
+            </section>
+          </div>
+        </aside>
+
+        <section class="editor" id="editor">
+          <div class="editor-head">
+            <div class="block-title">展开面</div>
+            <p class="hint">拖左右边只改宽度，拖上下边只改高度，可以单独拉满整个刀版。滚轮缩放视图。</p>
+          </div>
+          <div class="editor-canvas-wrap">
+            <canvas id="preview"></canvas>
+          </div>
+          <div class="editor-bar">
+            <label class="axis">宽
+              <input id="art-scale-x" type="range" min="15" max="400" value="100" />
+              <span id="art-scale-x-label">100%</span>
+            </label>
+            <label class="axis">高
+              <input id="art-scale-y" type="range" min="15" max="400" value="100" />
+              <span id="art-scale-y-label">100%</span>
+            </label>
+            <div class="editor-actions">
+              <button id="art-fill" class="btn ghost compact" type="button">铺满刀版</button>
+              <button id="art-reset" class="btn ghost compact" type="button">重置图案</button>
+              <button id="view-reset" class="btn ghost compact" type="button">适配刀版</button>
+            </div>
+          </div>
+        </section>
+
+        <main class="stage" id="stage">
+          <div class="hint-float">点击盒面上传图案 · 拖拽旋转</div>
+          <div class="toolbar">
+            <button id="zoom-out" class="icon-btn" type="button" title="缩小">−</button>
+            <button id="zoom-in" class="icon-btn" type="button" title="放大">+</button>
+            <div class="fold">
+              <span>展开</span>
+              <input id="fold" type="range" min="0" max="100" value="100" />
+              <span>闭合</span>
+            </div>
+            <button id="reset" class="icon-btn" type="button" title="重置视角">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  d="M12 5V2L8 6l4 4V7a5 5 0 1 1-4.3 2.5"
+                />
+              </svg>
+            </button>
+            <button id="spin" class="icon-btn" type="button" title="自动旋转">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  d="M20 12a8 8 0 1 1-2.2-5.5M20 4v5h-5"
+                />
+              </svg>
+            </button>
+            <button id="export-bottom" class="btn primary slim" type="button">导出</button>
+          </div>
+        </main>
+      </div>
+    </div>
+    <div id="face-menu" class="face-menu" hidden>
+      <div id="face-menu-title" class="face-menu-title">正面</div>
+      <button id="face-upload" type="button">上传图片</button>
+      <button id="face-clear" type="button">清除此面</button>
+    </div>
+    <input id="face-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+    <div id="export-dialog" class="modal" hidden>
+      <div class="modal-backdrop" data-close-export></div>
+      <div class="modal-card export-card" role="dialog" aria-modal="true" aria-labelledby="export-title">
+        <div class="export-tabs">
+          <button type="button" class="export-tab active" data-export-tab="mockup">样机</button>
+          <button type="button" class="export-tab" data-export-tab="dieline">刀版</button>
+          <button type="button" class="export-tab" data-export-tab="video">视频</button>
+          <button type="button" class="export-tab" data-export-tab="code">代码</button>
+          <button id="export-close" class="icon-btn export-close" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="export-body">
+          <div class="export-stage">
+            <img id="export-preview" alt="当前样机预览" />
+            <canvas id="export-dieline-preview" hidden></canvas>
+            <div id="export-video-note" class="export-video-note" hidden>正在按所选镜头录制当前盒子</div>
+          </div>
+          <div class="export-options">
+            <section data-export-panel="mockup">
+              <h2 id="export-title">样机</h2>
+              <label class="switch"><input id="export-shadow" type="checkbox" checked /> 带地面阴影导出</label>
+              <div class="option-label">格式与质量</div>
+              <div class="choice" data-choice="mockup-format">
+                <button type="button" data-value="jpg">JPG</button>
+                <button type="button" class="active" data-value="png">PNG</button>
+              </div>
+              <div class="choice" data-choice="mockup-size">
+                <button type="button" class="active" data-value="2k">2K</button>
+                <button type="button" data-value="4k">4K</button>
+                <button type="button" data-value="8k">8K</button>
+              </div>
+              <p class="hint">2K 足够预览，4K / 8K 更清晰，导出会稍慢。</p>
+              <button id="export-mockup" class="btn primary export-go" type="button">渲染导出</button>
+            </section>
+            <section data-export-panel="dieline" hidden>
+              <h2>刀版</h2>
+              <div class="option-label">文件类型</div>
+              <div class="choice choice-stack" data-choice="dieline-kind">
+                <button type="button" class="active" data-value="design">设计文件<span>含贴图和刀版线，可直接看效果</span></button>
+                <button type="button" data-value="cut">刀线文件<span>只有裁切线和折线，方便进印刷软件</span></button>
+              </div>
+              <div class="option-label">颜色模式</div>
+              <div class="choice" data-choice="dieline-color">
+                <button type="button" class="active" data-value="cmyk">CMYK</button>
+                <button type="button" data-value="rgb">RGB</button>
+              </div>
+              <div class="option-label">格式</div>
+              <div class="choice" data-choice="dieline-format">
+                <button type="button" class="active" data-value="ai">AI</button>
+                <button type="button" data-value="pdf">PDF</button>
+              </div>
+              <p class="hint">AI 文件用 Illustrator 可以直接打开。刀线是矢量的，设计文件里的贴图按当前展开面位置嵌入。</p>
+              <button id="export-dieline" class="btn primary export-go" type="button">立即导出</button>
+            </section>
+            <section data-export-panel="video" hidden>
+              <h2>视频</h2>
+              <div class="option-label">样式</div>
+              <div class="video-styles" id="video-styles"></div>
+              <div class="option-label">格式</div>
+              <div class="choice" data-choice="video-format">
+                <button type="button" data-value="mp4">MP4</button>
+                <button type="button" class="active" data-value="mov">MOV</button>
+              </div>
+              <div class="choice" data-choice="video-size">
+                <button type="button" class="active" data-value="720">720P</button>
+                <button type="button" data-value="1080">1080P</button>
+                <button type="button" data-value="2k">2K</button>
+              </div>
+              <label class="switch"><input id="export-fast" type="checkbox" /> 快速导出，细节较少</label>
+              <button id="export-video" class="btn primary export-go" type="button">立即导出</button>
+            </section>
+            <section data-export-panel="code" hidden>
+              <h2>代码</h2>
+              <p>你会得到一个 HTML 文件，贴图已经嵌在里面。</p>
+              <ul>
+                <li>可以放进自己的网页，拖拽旋转这个盒子。</li>
+                <li>页面底部保留展开 / 闭合滑杆。</li>
+              </ul>
+              <p class="hint">页面通过 CDN 加载 three.js，打开时需要能访问外网。</p>
+              <button id="export-html" class="btn primary export-go" type="button">生成 HTML 代码</button>
+              <textarea id="export-html-code" hidden readonly></textarea>
+              <button id="export-copy" class="btn ghost compact" type="button" hidden>复制代码</button>
+            </section>
+            <p id="export-status" class="export-status"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
