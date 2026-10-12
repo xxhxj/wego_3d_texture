@@ -147,12 +147,14 @@ body[data-page="mockup"] .editor { display: none; }
   box-shadow: 0 0 0 1px var(--purple);
 }
 
-.model-card canvas {
+.model-card canvas,
+.model-card img {
   width: 100%;
   height: 86px;
   display: block;
   border-radius: 8px;
   background: #f3f3f5;
+  object-fit: cover;
 }
 
 .model-card b {

@@ -5,6 +5,13 @@ const pdfLibBundle = fileURLToPath(
   new URL('./node_modules/pdf-lib/dist/pdf-lib.esm.js', import.meta.url),
 );
 
+const apiProxy = {
+  '/api': {
+    target: 'http://127.0.0.1:3000',
+    changeOrigin: true,
+  },
+};
+
 export default defineConfig({
   resolve: {
     alias: [
@@ -16,5 +23,12 @@ export default defineConfig({
     port: 5173,
     host: '0.0.0.0',
     strictPort: true,
+    proxy: apiProxy,
+  },
+  preview: {
+    port: 5173,
+    host: '0.0.0.0',
+    strictPort: true,
+    proxy: apiProxy,
   },
 });

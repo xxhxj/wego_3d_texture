@@ -1,0 +1,17 @@
+{
+  "name": "wego-mockup-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "seed": "node src/seed.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "minio": "^8.0.5",
+    "mysql2": "^3.14.1"
+  }
+}

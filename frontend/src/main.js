@@ -7,7 +7,7 @@ import { exportMockup } from './export/mockup.js';
 import { recordTurntable, VIDEO_STYLES } from './export/video.js';
 import { createDielineEditor } from './dielineEditor.js';
 import { createShape } from './shapes.js';
-import { CATEGORIES, drawModelThumb, FACE_NAMES, layoutFor, makeLabelArtwork, MODELS } from './models.js';
+import { drawModelThumb, FACE_NAMES, layoutFor, makeLabelArtwork } from './models.js';
 import {
   containPlacement,
   fillPlacement,
@@ -18,6 +18,10 @@ import {
 } from './net.js';
 
 const MM = 0.01;
+const API_BASE = import.meta.env.VITE_API_BASE || '';
+
+let CATEGORIES = [];
+let MODELS = [];
 
 const PAPERS = {
   white: { edge: '#f4f0e8', inside: '#f6f1e7' },
@@ -727,6 +731,7 @@ function markModel() {
 
 function renderModels() {
   const category = CATEGORIES.find((item) => item.id === activeCategory) || CATEGORIES[0];
+  if (!category) return;
   modelHeading.textContent = category.name;
   modelCats.querySelectorAll('button').forEach((button) => {
     button.classList.toggle('active', button.dataset.category === category.id);
@@ -741,29 +746,54 @@ function renderModels() {
     thumb.width = 240;
     thumb.height = 160;
     drawModelThumb(thumb, model);
+    if (model.coverUrl) {
+      const photo = document.createElement('img');
+      photo.alt = model.name;
+      photo.src = model.coverUrl;
+      photo.addEventListener('error', () => {
+        photo.replaceWith(thumb);
+      });
+      button.append(photo);
+    } else {
+      button.append(thumb);
+    }
     const name = document.createElement('b');
     name.textContent = model.name;
     const size = document.createElement('small');
     size.textContent = `${model.w} × ${model.d} × ${model.h} mm`;
-    button.append(thumb, name, size);
+    button.append(name, size);
     button.addEventListener('click', () => applyModel(model));
     modelGrid.append(button);
   }
   markModel();
 }
 
-for (const category of CATEGORIES) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.dataset.category = category.id;
-  button.textContent = category.name;
-  button.addEventListener('click', () => {
-    activeCategory = category.id;
-    renderModels();
-  });
-  modelCats.append(button);
+async function initCatalog() {
+  const response = await fetch(`${API_BASE}/api/catalog`);
+  if (!response.ok) throw new Error(`目录接口返回 ${response.status}`);
+  const data = await response.json();
+  CATEGORIES = data.categories || [];
+  MODELS = data.models || [];
+  activeCategory = CATEGORIES[0]?.id || 'box';
+  modelCats.replaceChildren();
+  for (const category of CATEGORIES) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.category = category.id;
+    button.textContent = category.name;
+    button.addEventListener('click', () => {
+      activeCategory = category.id;
+      renderModels();
+    });
+    modelCats.append(button);
+  }
+  renderModels();
 }
-renderModels();
+
+initCatalog().catch((error) => {
+  console.error(error);
+  modelHeading.textContent = '样机目录加载失败';
+});
 
 document.querySelectorAll('.rail-btn').forEach((button) => {
   button.addEventListener('click', () => showPage(button.dataset.page));
