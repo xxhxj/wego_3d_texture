@@ -10,4 +10,12 @@ export const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 8,
   namedPlaceholders: true,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000,
+});
+
+pool.pool.on('connection', (connection) => {
+  connection.on('error', (error) => {
+    console.error('MySQL 连接中断', error.code || error.message);
+  });
 });
