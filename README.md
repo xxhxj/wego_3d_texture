@@ -77,7 +77,9 @@ npm install
 npm run dev
 ```
 
-浏览器打开 `http://localhost:5173`。样机页的分类和封面来自 `/api/catalog`。
+浏览器打开 `http://localhost:5173`。未登录会跳到同级目录的单点系统 `wego_sso`（http://127.0.0.1:5174）。样机页的分类和封面来自 `/api/catalog`，左侧「编辑 / 样机」由单点菜单控制。
+
+`backend/.env` 里的 `SSO_JWT_SECRET` 必须和 `wego_sso/backend/.env` 一致。管理员 `admin` / `admin123`，样机账号 `designer` / `designer123`。
 
 常用命令：
 

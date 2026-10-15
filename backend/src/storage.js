@@ -31,16 +31,22 @@ export function coverKey(code) {
   return `covers/${code}.svg`;
 }
 
+export function artKey(code) {
+  return `art/${code}.svg`;
+}
+
 export function coverUrl(key) {
   if (!key) return '';
   return `${config.minio.publicBase}/${key}`;
 }
 
-export async function putCover(code, svg) {
-  const key = coverKey(code);
-  const body = Buffer.from(svg);
+export async function putObject(key, body, contentType) {
   await minio.putObject(config.minio.bucket, key, body, body.length, {
-    'Content-Type': 'image/svg+xml; charset=utf-8',
+    'Content-Type': contentType,
   });
   return key;
+}
+
+export async function putCover(code, svg) {
+  return putObject(coverKey(code), Buffer.from(svg), 'image/svg+xml; charset=utf-8');
 }

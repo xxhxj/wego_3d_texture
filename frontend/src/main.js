@@ -8,6 +8,7 @@ import { recordTurntable, VIDEO_STYLES } from './export/video.js';
 import { createDielineEditor } from './dielineEditor.js';
 import { createShape } from './shapes.js';
 import { drawModelThumb, FACE_NAMES, layoutFor, makeLabelArtwork } from './models.js';
+import { SSO_API, authHeaders, ensureLogin, isMember, logout, setMember } from './session.js';
 import {
   containPlacement,
   fillPlacement,
@@ -497,17 +498,26 @@ for (const style of VIDEO_STYLES) {
 }
 
 document.querySelector('#export-mockup').addEventListener('click', (event) => {
-  runExport(event.currentTarget, () => exportMockup({
-    renderer,
-    scene,
-    camera,
-    viewWidth: stage.clientWidth,
-    viewHeight: stage.clientHeight,
-    setShadowVisible,
-    format: choiceValue('mockup-format'),
-    resolution: choiceValue('mockup-size'),
-    withShadow: document.querySelector('#export-shadow').checked,
-  }));
+  const resolution = choiceValue('mockup-size');
+  if (resolution === '8k' && !isMember()) {
+    openMember('样机 8K 导出需要会员。');
+    return;
+  }
+  runExport(event.currentTarget, async () => {
+    const status = await exportMockup({
+      renderer,
+      scene,
+      camera,
+      viewWidth: stage.clientWidth,
+      viewHeight: stage.clientHeight,
+      setShadowVisible,
+      format: choiceValue('mockup-format'),
+      resolution,
+      withShadow: document.querySelector('#export-shadow').checked,
+    });
+    await saveWork();
+    return status;
+  });
 });
 
 document.querySelector('#export-dieline').addEventListener('click', (event) => {
@@ -523,6 +533,10 @@ document.querySelector('#export-dieline').addEventListener('click', (event) => {
 });
 
 document.querySelector('#export-video').addEventListener('click', (event) => {
+  if (choiceValue('video-size') === '2k' && !isMember()) {
+    openMember('视频 2K 导出需要会员。');
+    return;
+  }
   const note = document.querySelector('#export-video-note');
   note.hidden = false;
   runExport(event.currentTarget, () => recordTurntable({
@@ -693,7 +707,14 @@ function showPage(page) {
   });
 }
 
-function applyModel(model) {
+let artToken = 0;
+
+function applyModel(model, options = {}) {
+  if (model.memberOnly && !isMember()) {
+    openMember(`「${model.name}」是会员样例。`);
+    return;
+  }
+  const sameArt = state.modelId === model.id && state.imageName === model.name && state.image;
   const nextKind = model.kind || 'box';
   if (nextKind !== state.kind) state.faceImages = {};
   state.kind = nextKind;
@@ -707,10 +728,32 @@ function applyModel(model) {
   document.querySelector('#size-h').value = String(model.h);
   foldInput.value = String(Math.round(model.fold * 100));
   applyPaper(model.paper || 'white');
-  if (state.imageName === '示例包装图' && state.image) {
+  if (options.keepImage) {
+    state.placement = state.image ? containPlacement(state.image, currentLayout()) : null;
+  } else if (model.artUrl && !sameArt) {
+    state.image = null;
+    state.imageName = model.name;
+    state.placement = null;
+    state.faceImages = {};
+    const token = ++artToken;
+    const modelId = model.id;
+    loadProtectedImage(model.artUrl).then((image) => {
+      if (token !== artToken || state.modelId !== modelId) return;
+      state.image = image;
+      state.imageName = model.name;
+      state.placement = fillPlacement(currentLayout());
+      fileName.textContent = `当前：${model.name}`;
+      syncEditor();
+      rebuildBox();
+    }).catch(() => {
+      if (token === artToken) setStatus('图案暂时没有贴上');
+    });
+  } else if (!model.artUrl && state.imageName === '示例包装图' && state.image) {
     state.image = sampleForCurrent();
+    state.placement = containPlacement(state.image, currentLayout());
+  } else {
+    state.placement = state.image ? containPlacement(state.image, currentLayout()) : null;
   }
-  state.placement = state.image ? containPlacement(state.image, currentLayout()) : null;
   framing = true;
   markModel();
   syncEditor();
@@ -719,9 +762,23 @@ function applyModel(model) {
 }
 
 const modelGrid = document.querySelector('#model-grid');
-const modelCats = document.querySelector('#model-cats');
+const libraryGroups = document.querySelector('#library-groups');
+const libraryChips = document.querySelector('#library-chips');
+const librarySearch = document.querySelector('#library-search');
+const librarySearchWrap = document.querySelector('#library-search-wrap');
+const libraryBar = document.querySelector('#library-bar');
+const libraryToggle = document.querySelector('#library-toggle');
+const libraryHint = document.querySelector('#library-hint');
 const modelHeading = document.querySelector('#model-heading');
+const SWATCHES = [
+  { paper: 'white', color: '#f7f4ee' },
+  { paper: 'kraft', color: '#c6a36a' },
+  { paper: 'grey', color: '#d5d5d5' },
+];
+let source = 'library';
+let libraryOpen = false;
 let activeCategory = 'box';
+let activeTag = '方形盒';
 
 function markModel() {
   modelGrid.querySelectorAll('.model-card').forEach((card) => {
@@ -729,71 +786,351 @@ function markModel() {
   });
 }
 
-function renderModels() {
-  const category = CATEGORIES.find((item) => item.id === activeCategory) || CATEGORIES[0];
-  if (!category) return;
-  modelHeading.textContent = category.name;
-  modelCats.querySelectorAll('button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.category === category.id);
-  });
-  modelGrid.replaceChildren();
-  for (const model of MODELS.filter((item) => item.category === category.id)) {
+function tagsOf(categoryId) {
+  return [...new Set(MODELS.filter((item) => item.category === categoryId).map((item) => item.tag))];
+}
+
+function selectTag(categoryId, tag) {
+  activeCategory = categoryId;
+  activeTag = tag;
+  libraryOpen = false;
+  renderModels();
+}
+
+function renderLibraryChrome() {
+  const keyword = librarySearch.value.trim();
+  libraryChips.replaceChildren();
+  for (const category of CATEGORIES.filter((item) => item.id !== 'more')) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'model-card';
-    button.dataset.model = model.id;
-    const thumb = document.createElement('canvas');
-    thumb.width = 240;
-    thumb.height = 160;
-    drawModelThumb(thumb, model);
-    if (model.coverUrl) {
-      const photo = document.createElement('img');
-      photo.alt = model.name;
-      photo.src = model.coverUrl;
-      photo.addEventListener('error', () => {
-        photo.replaceWith(thumb);
-      });
-      button.append(photo);
-    } else {
-      button.append(thumb);
-    }
-    const name = document.createElement('b');
-    name.textContent = model.name;
-    const size = document.createElement('small');
-    size.textContent = `${model.w} × ${model.d} × ${model.h} mm`;
-    button.append(name, size);
-    button.addEventListener('click', () => applyModel(model));
-    modelGrid.append(button);
+    button.textContent = category.id === 'bag' ? '袋子 & 小袋' : category.name;
+    button.classList.toggle('active', category.id === activeCategory);
+    button.addEventListener('click', () => {
+      const tags = tagsOf(category.id);
+      selectTag(category.id, tags[0] || category.name);
+    });
+    libraryChips.append(button);
   }
+  libraryToggle.classList.toggle('open', libraryOpen);
+  libraryGroups.hidden = !libraryOpen;
+  libraryGroups.replaceChildren();
+  if (!libraryOpen) return;
+  for (const category of CATEGORIES) {
+    const tags = tagsOf(category.id).filter((tag) => !keyword || tag.includes(keyword) || category.name.includes(keyword));
+    if (!tags.length) continue;
+    const block = document.createElement('div');
+    block.className = 'library-group';
+    const title = document.createElement('h3');
+    title.textContent = category.id === 'bag' ? '袋子 & 小袋 & 包装袋' : category.name;
+    title.classList.toggle('active', category.id === activeCategory);
+    const row = document.createElement('div');
+    row.className = 'library-tags';
+    for (const tag of tags) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = tag;
+      button.classList.toggle('active', tag === activeTag && category.id === activeCategory);
+      button.addEventListener('click', () => selectTag(category.id, tag));
+      row.append(button);
+    }
+    block.append(title, row);
+    libraryGroups.append(block);
+  }
+}
+
+function appendModelCard(model) {
+  const tile = document.createElement('div');
+  tile.className = 'model-tile';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'model-card';
+  button.dataset.model = model.id;
+  button.title = model.name;
+  const thumb = document.createElement('canvas');
+  thumb.width = 320;
+  thumb.height = 320;
+  drawModelThumb(thumb, model);
+  if (model.coverUrl) {
+    const photo = document.createElement('img');
+    photo.alt = model.name;
+    photo.src = `${model.coverUrl}?v=4`;
+    photo.addEventListener('error', () => {
+      photo.replaceWith(thumb);
+    });
+    button.append(photo);
+  } else {
+    button.append(thumb);
+  }
+  if (model.memberOnly) {
+    const badge = document.createElement('span');
+    badge.className = 'member-badge';
+    badge.setAttribute('aria-hidden', 'true');
+    badge.textContent = '会员';
+    button.append(badge);
+  }
+  button.addEventListener('click', () => applyModel(model));
+  const swatches = document.createElement('div');
+  swatches.className = 'swatches';
+  for (const swatch of SWATCHES) {
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.style.background = swatch.color;
+    dot.title = swatch.paper === 'kraft' ? '牛皮纸' : swatch.paper === 'grey' ? '灰板纸' : '白卡纸';
+    dot.classList.toggle('active', state.modelId === model.id && state.paper === swatch.paper);
+    dot.addEventListener('click', () => {
+      applyModel({ ...model, paper: swatch.paper });
+    });
+    swatches.append(dot);
+  }
+  tile.append(button, swatches);
+  modelGrid.append(tile);
+}
+
+function renderModels() {
+  modelGrid.replaceChildren();
+  libraryHint.hidden = true;
+  if (source === 'mine') {
+    librarySearchWrap.hidden = true;
+    libraryBar.hidden = true;
+    libraryGroups.hidden = true;
+    modelHeading.hidden = false;
+    modelHeading.textContent = '我的';
+    loadWorks();
+    return;
+  }
+  librarySearchWrap.hidden = false;
+  libraryBar.hidden = false;
+  renderLibraryChrome();
+  const keyword = librarySearch.value.trim();
+  modelHeading.hidden = libraryOpen;
+  modelGrid.hidden = libraryOpen;
+  if (libraryOpen) return;
+  const models = MODELS.filter((item) => {
+    if (keyword) return `${item.name}${item.tag}${item.category}`.includes(keyword);
+    return item.tag === activeTag && item.category === activeCategory;
+  });
+  modelHeading.textContent = keyword ? '搜索结果' : activeTag;
+  if (!models.length) {
+    libraryHint.hidden = false;
+    libraryHint.textContent = '这个分类里还没有样例。';
+    return;
+  }
+  for (const model of models) appendModelCard(model);
   markModel();
 }
 
+async function loadWorks() {
+  const response = await fetch(`${API_BASE}/api/works`, { headers: authHeaders() });
+  if (!response.ok) {
+    modelHeading.textContent = '我的作品暂时读不出来';
+    return;
+  }
+  const data = await response.json();
+  modelGrid.replaceChildren();
+  if (!data.data?.length) {
+    const empty = document.createElement('p');
+    empty.className = 'hint';
+    empty.textContent = '还没有导出记录。在样机或视频里导出一次后会出现在这里。';
+    modelGrid.append(empty);
+    return;
+  }
+  for (const work of data.data) {
+    const tile = document.createElement('div');
+    tile.className = 'model-tile';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'model-card';
+    button.title = work.title;
+    if (work.previewUrl) {
+      const photo = document.createElement('img');
+      photo.alt = work.title;
+      photo.src = work.previewUrl;
+      button.append(photo);
+    }
+    button.addEventListener('click', () => restoreWork(work));
+    tile.append(button);
+    modelGrid.append(tile);
+  }
+}
+
+function artworkDataUrl(image) {
+  if (!image) return '';
+  if (typeof image.toDataURL === 'function') return image.toDataURL('image/jpeg', 0.82);
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth || image.width || 1;
+  canvas.height = image.naturalHeight || image.height || 1;
+  canvas.getContext('2d').drawImage(image, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.82);
+}
+
+async function loadProtectedImage(url) {
+  const response = await fetch(url, { headers: authHeaders() });
+  if (!response.ok) throw new Error('图案读取失败');
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    return await loadDataUrl(objectUrl);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function loadDataUrl(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('图案读取失败'));
+    image.src = url;
+  });
+}
+
+async function saveWork() {
+  const model = currentModel();
+  const preview = renderer.domElement.toDataURL('image/jpeg', 0.7);
+  await fetch(`${API_BASE}/api/works`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: model.name || '导出样机',
+      modelCode: model.id,
+      preview,
+      design: {
+        modelCode: model.id,
+        kind: state.kind,
+        w: state.w,
+        d: state.d,
+        h: state.h,
+        fold: state.fold,
+        paper: state.paper,
+        inside: state.inside,
+        imageName: state.imageName,
+        image: artworkDataUrl(state.image),
+      },
+    }),
+  });
+  if (source === 'mine') renderModels();
+}
+
+async function restoreWork(work) {
+  const design = work.design || {};
+  const model = MODELS.find((item) => item.id === design.modelCode) || {
+    id: design.modelCode,
+    name: work.title,
+    kind: design.kind || 'box',
+    w: design.w,
+    d: design.d,
+    h: design.h,
+    fold: design.fold ?? 1,
+    paper: design.paper,
+  };
+  applyModel(model, { keepImage: true });
+  if (design.image) {
+    const image = await loadDataUrl(design.image);
+    setImage(image, design.imageName || work.title);
+  }
+  setStatus(`已打开 ${work.title}`);
+}
+
+function openMember(reason) {
+  document.querySelector('#member-reason').textContent = reason;
+  document.querySelector('#member-status').textContent = '';
+  document.querySelector('#member-dialog').hidden = false;
+}
+
+async function buyMembership(plan) {
+  const status = document.querySelector('#member-status');
+  status.textContent = '正在开通…';
+  const response = await fetch(`${SSO_API}/api/auth/membership`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    status.textContent = data.message || '开通失败';
+    return;
+  }
+  setMember(true);
+  status.textContent = data.message || '已开通';
+  document.querySelector('#member-dialog').hidden = true;
+  setStatus(data.message || '会员已开通');
+}
+
+function flattenMenus(nodes, paths = []) {
+  for (const node of nodes || []) {
+    if (node.path) paths.push(node.path);
+    flattenMenus(node.children, paths);
+  }
+  return paths;
+}
+
+async function applyAccess() {
+  const me = await fetch(`${SSO_API}/api/auth/me`, { headers: authHeaders() });
+  if (me.status === 401) {
+    logout();
+    return false;
+  }
+  const user = await me.json();
+  setMember(user.member);
+  document.querySelector('#user-name').textContent = user.nickname || user.username;
+  const menuResponse = await fetch(`${SSO_API}/api/auth/menus?app=wego-mockup`, { headers: authHeaders() });
+  const menuData = await menuResponse.json();
+  const paths = new Set(flattenMenus(menuData.data));
+  document.querySelectorAll('.rail-btn').forEach((button) => {
+    button.hidden = paths.size > 0 && !paths.has(button.dataset.page);
+  });
+  const current = document.querySelector(`.rail-btn[data-page="${document.body.dataset.page}"]`);
+  if (current?.hidden) {
+    const first = document.querySelector('.rail-btn:not([hidden])');
+    if (first) showPage(first.dataset.page);
+  }
+  return true;
+}
+
 async function initCatalog() {
-  const response = await fetch(`${API_BASE}/api/catalog`);
+  if (!await applyAccess()) return;
+  const response = await fetch(`${API_BASE}/api/catalog`, { headers: authHeaders() });
+  if (response.status === 401) {
+    logout();
+    return;
+  }
   if (!response.ok) throw new Error(`目录接口返回 ${response.status}`);
   const data = await response.json();
   CATEGORIES = data.categories || [];
   MODELS = data.models || [];
-  activeCategory = CATEGORIES[0]?.id || 'box';
-  modelCats.replaceChildren();
-  for (const category of CATEGORIES) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.dataset.category = category.id;
-    button.textContent = category.name;
-    button.addEventListener('click', () => {
-      activeCategory = category.id;
-      renderModels();
-    });
-    modelCats.append(button);
-  }
   renderModels();
 }
 
+document.querySelector('#logout').addEventListener('click', logout);
+document.querySelectorAll('[data-source]').forEach((button) => {
+  button.addEventListener('click', () => {
+    source = button.dataset.source;
+    document.querySelectorAll('[data-source]').forEach((item) => {
+      item.classList.toggle('active', item === button);
+    });
+    renderModels();
+  });
+});
+librarySearch.addEventListener('input', () => renderModels());
+libraryToggle.addEventListener('click', () => {
+  libraryOpen = !libraryOpen;
+  renderModels();
+});
+document.querySelectorAll('[data-close-member], #member-close').forEach((node) => {
+  node.addEventListener('click', () => {
+    document.querySelector('#member-dialog').hidden = true;
+  });
+});
+document.querySelectorAll('[data-plan]').forEach((button) => {
+  button.addEventListener('click', () => buyMembership(button.dataset.plan));
+});
+
+if (ensureLogin()) {
 initCatalog().catch((error) => {
   console.error(error);
   modelHeading.textContent = '样机目录加载失败';
 });
+}
 
 document.querySelectorAll('.rail-btn').forEach((button) => {
   button.addEventListener('click', () => showPage(button.dataset.page));

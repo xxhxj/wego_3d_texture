@@ -17,6 +17,7 @@ export const config = {
     password: required('MYSQL_PASSWORD'),
     database: required('MYSQL_DATABASE'),
   },
+  jwtSecret: required('SSO_JWT_SECRET'),
   minio: {
     endPoint: required('MINIO_ENDPOINT'),
     port: Number(required('MINIO_PORT')),

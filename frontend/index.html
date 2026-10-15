@@ -21,6 +21,8 @@
           <span>包装样机</span>
         </div>
         <div class="top-actions">
+          <span id="user-name" class="user-name"></span>
+          <button id="logout" class="btn ghost compact" type="button">退出</button>
           <button id="export-top" class="btn primary" type="button">导出</button>
         </div>
       </header>
@@ -98,10 +100,24 @@
           </section>
           </div>
           <div data-page-panel="mockup" hidden>
-            <section class="block">
-              <div id="model-cats" class="model-cats"></div>
-              <div class="block-title" id="model-heading">盒子</div>
-              <p class="hint">点一个样例，替换右侧正在看的模型。</p>
+            <section class="block library-block">
+              <div class="source-tabs">
+                <button type="button" class="active" data-source="library">资源库</button>
+                <button type="button" data-source="mine">我的</button>
+              </div>
+              <label class="library-search" id="library-search-wrap">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="M16 16l4 4"></path></svg>
+                <input id="library-search" type="search" placeholder="尝试用4个以上的词来描述..." />
+              </label>
+              <div class="library-bar" id="library-bar">
+                <div id="library-chips" class="library-chips"></div>
+                <button id="library-toggle" type="button" aria-label="展开分类">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14l6-6 6 6"></path></svg>
+                </button>
+              </div>
+              <div id="library-groups" class="library-groups" hidden></div>
+              <div class="library-heading" id="model-heading">方形盒</div>
+              <p class="hint" id="library-hint" hidden></p>
               <div id="model-grid" class="model-grid"></div>
             </section>
           </div>
@@ -167,6 +183,19 @@
         </main>
       </div>
     </div>
+    <div id="member-dialog" class="modal" hidden>
+      <div class="modal-backdrop" data-close-member></div>
+      <div class="modal-card member-card" role="dialog" aria-modal="true">
+        <h2>开通会员</h2>
+        <p id="member-reason" class="hint">会员可使用资源库中的会员样例，以及样机 8K、视频 2K 导出。</p>
+        <div class="member-plans">
+          <button type="button" data-plan="month"><b>月会员</b><span>¥29 / 30 天</span></button>
+          <button type="button" data-plan="year"><b>年会员</b><span>¥199 / 365 天</span></button>
+        </div>
+        <p id="member-status" class="hint"></p>
+        <button id="member-close" class="btn ghost compact" type="button">稍后</button>
+      </div>
+    </div>
     <div id="face-menu" class="face-menu" hidden>
       <div id="face-menu-title" class="face-menu-title">正面</div>
       <button id="face-upload" type="button">上传图片</button>
@@ -201,7 +230,7 @@
               <div class="choice" data-choice="mockup-size">
                 <button type="button" class="active" data-value="2k">2K</button>
                 <button type="button" data-value="4k">4K</button>
-                <button type="button" data-value="8k">8K</button>
+                <button type="button" data-value="8k" data-member="1">8K</button>
               </div>
               <p class="hint">2K 足够预览，4K / 8K 更清晰，导出会稍慢。</p>
               <button id="export-mockup" class="btn primary export-go" type="button">渲染导出</button>
@@ -238,7 +267,7 @@
               <div class="choice" data-choice="video-size">
                 <button type="button" class="active" data-value="720">720P</button>
                 <button type="button" data-value="1080">1080P</button>
-                <button type="button" data-value="2k">2K</button>
+                <button type="button" data-value="2k" data-member="1">2K</button>
               </div>
               <label class="switch"><input id="export-fast" type="checkbox" /> 快速导出，细节较少</label>
               <button id="export-video" class="btn primary export-go" type="button">立即导出</button>
