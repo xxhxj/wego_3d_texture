@@ -1,6 +1,7 @@
 import express from 'express';
 import { config } from './config.js';
-import { pool } from './db.js';
+import { ensureLibrarySchema, ensureWorksCategory, pool } from './db.js';
+import { libraryRouter, listUploadedModels, mapUpload } from './library.js';
 import { requireAuth } from './sso.js';
 import { coverUrl, minio, putObject } from './storage.js';
 
@@ -11,6 +12,7 @@ app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   next();
 });
+app.use('/api/library', libraryRouter);
 
 function mapModel(row) {
   return {
@@ -70,31 +72,73 @@ app.get('/api/catalog', requireAuth, async (_req, res, next) => {
     const [models] = await pool.query(
       'SELECT * FROM models ORDER BY sort_order, code',
     );
-    const used = new Set(models.map((item) => item.category_code));
+    res.setHeader('Cache-Control', 'no-store');
+    const uploads = await listUploadedModels();
+    const used = new Set([
+      ...models.map((item) => item.category_code),
+      ...uploads.map((item) => item.category_code),
+    ]);
     res.json({
       categories: categories
         .filter((item) => used.has(item.code))
         .map((item) => ({ id: item.code, name: item.name })),
-      models: models.map(mapModel),
+      models: [...models.map(mapModel), ...uploads.map(mapUpload)],
     });
   } catch (error) {
     next(error);
   }
 });
 
+async function resolveCategory(modelCode, requested) {
+  const wanted = String(requested || '').slice(0, 32);
+  if (wanted) {
+    const [rows] = await pool.query('SELECT code FROM categories WHERE code = ? LIMIT 1', [wanted]);
+    if (rows[0]) return rows[0].code;
+  }
+  const [models] = await pool.query(
+    'SELECT category_code AS categoryCode FROM models WHERE code = ? LIMIT 1',
+    [modelCode],
+  );
+  return models[0]?.categoryCode || 'more';
+}
+
+async function resolveTag(modelCode, requested) {
+  const wanted = String(requested || '').slice(0, 64);
+  if (wanted) return wanted;
+  const [models] = await pool.query(
+    'SELECT tag_name AS tagName FROM models WHERE code = ? LIMIT 1',
+    [modelCode],
+  );
+  return models[0]?.tagName || '';
+}
+
 app.get('/api/works', requireAuth, async (req, res, next) => {
   try {
+    const category = String(req.query.category || '').slice(0, 32);
+    const tag = String(req.query.tag || '').slice(0, 64);
+    const params = [req.user.id];
+    let where = 'user_id = ?';
+    if (category) {
+      where += ' AND category_code = ?';
+      params.push(category);
+    }
+    if (tag) {
+      where += ' AND tag_name = ?';
+      params.push(tag);
+    }
     const [rows] = await pool.query(
-      `SELECT id, title, model_code AS modelCode, design_json AS designJson,
-              preview_key AS previewKey, created_at AS createdAt
-       FROM works WHERE user_id = ? ORDER BY id DESC LIMIT 60`,
-      [req.user.id],
+      `SELECT id, title, model_code AS modelCode, category_code AS category, tag_name AS tag,
+              design_json AS designJson, preview_key AS previewKey, created_at AS createdAt
+       FROM works WHERE ${where} ORDER BY id DESC LIMIT 60`,
+      params,
     );
     res.json({
       data: rows.map((row) => ({
         id: row.id,
         title: row.title,
         modelCode: row.modelCode,
+        category: row.category,
+        tag: row.tag,
         createdAt: row.createdAt,
         design: JSON.parse(row.designJson),
         previewUrl: coverUrl(row.previewKey),
@@ -112,9 +156,11 @@ app.post('/api/works', requireAuth, async (req, res, next) => {
   const preview = String(req.body?.preview || '');
   if (!modelCode) return res.status(400).json({ message: '缺少样机' });
   try {
+    const category = await resolveCategory(modelCode, req.body?.categoryCode);
+    const tag = await resolveTag(modelCode, req.body?.tagName);
     const [result] = await pool.execute(
-      'INSERT INTO works (user_id, title, model_code, design_json) VALUES (?, ?, ?, ?)',
-      [req.user.id, title, modelCode, JSON.stringify(design)],
+      'INSERT INTO works (user_id, title, model_code, category_code, tag_name, design_json) VALUES (?, ?, ?, ?, ?, ?)',
+      [req.user.id, title, modelCode, category, tag, JSON.stringify(design)],
     );
     const matched = preview.match(/^data:image\/jpeg;base64,(.+)$/);
     if (matched) {
@@ -122,7 +168,7 @@ app.post('/api/works', requireAuth, async (req, res, next) => {
       await putObject(key, Buffer.from(matched[1], 'base64'), 'image/jpeg');
       await pool.execute('UPDATE works SET preview_key = ? WHERE id = ?', [key, result.insertId]);
     }
-    res.json({ id: result.insertId });
+    res.json({ id: result.insertId, category });
   } catch (error) {
     next(error);
   }
@@ -133,6 +179,11 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ ok: false, message: '服务暂时不可用' });
 });
 
-app.listen(config.port, '0.0.0.0', () => {
-  console.log(`api http://127.0.0.1:${config.port}`);
+Promise.all([ensureWorksCategory(), ensureLibrarySchema()]).then(() => {
+  app.listen(config.port, '0.0.0.0', () => {
+    console.log(`api http://127.0.0.1:${config.port}`);
+  });
+}).catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

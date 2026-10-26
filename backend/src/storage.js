@@ -47,6 +47,11 @@ export async function putObject(key, body, contentType) {
   return key;
 }
 
+export async function removeObject(key) {
+  if (!key) return;
+  await minio.removeObject(config.minio.bucket, key);
+}
+
 export async function putCover(code, svg) {
   return putObject(coverKey(code), Buffer.from(svg), 'image/svg+xml; charset=utf-8');
 }

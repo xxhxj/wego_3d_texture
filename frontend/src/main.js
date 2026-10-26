@@ -6,6 +6,7 @@ import { exportViewerHtml } from './export/html.js';
 import { exportMockup } from './export/mockup.js';
 import { recordTurntable, VIDEO_STYLES } from './export/video.js';
 import { createDielineEditor } from './dielineEditor.js';
+import { loadMeshShape } from './mesh.js';
 import { createShape } from './shapes.js';
 import { drawModelThumb, FACE_NAMES, layoutFor, makeLabelArtwork } from './models.js';
 import { SSO_API, authHeaders, ensureLogin, isMember, logout, setMember } from './session.js';
@@ -146,7 +147,8 @@ function currentModel() {
     h: state.h,
     d: state.d,
     fold: state.fold,
-    name: '包装',
+    name: state.imageName || '包装',
+    modelUrl: meshPreview?.url || '',
   };
 }
 
@@ -220,18 +222,72 @@ function scheduleTextures(ppmCap) {
   });
 }
 
+let shapeToken = 0;
+let meshPreview = null;
+
+function meshSourceKey(model) {
+  if ((model.kind || 'box') !== 'mesh') return '';
+  return model.modelUrl || meshPreview?.url || '';
+}
+
 function rebuildBox() {
-  if (box) box.dispose();
+  const token = ++shapeToken;
+  const model = currentModel();
   const size = worldSize();
-  box = createShape(currentModel(), {
-    ...size,
-    textures: makeTextures(),
-    edgeColor: PAPERS[state.paper].edge,
-    insideColor: state.inside,
+  const sourceKey = meshSourceKey(model);
+  if (sourceKey && box?.setSize && box.sourceKey === sourceKey) {
+    box.setSize(size);
+    applyFold();
+    if (framing) frameCamera();
+    return;
+  }
+  const previous = box;
+  const nextShape = sourceKey
+    ? loadMeshShape(sourceKey, sourceKey.startsWith('blob:') ? {} : authHeaders(), size)
+    : Promise.resolve(createShape(model, {
+      ...size,
+      textures: makeTextures(),
+      edgeColor: PAPERS[state.paper].edge,
+      insideColor: state.inside,
+    }));
+  nextShape.then((next) => {
+    if (token !== shapeToken) {
+      next.dispose();
+      return;
+    }
+    if (previous) previous.dispose();
+    box = next;
+    box.sourceKey = sourceKey;
+    scene.add(box.root);
+    if (meshPreview && !meshPreview.sized && next.rawSize) applyMeasuredSize(next);
+    applyFold();
+    if (framing) frameCamera();
+    if (sourceKey && next.foldable === false) {
+      setStatus('模型已显示。这个文件没有合页，展开滑杆不会把它打开。');
+    }
+  }).catch((error) => {
+    if (token === shapeToken) {
+      console.error(error);
+      setStatus('模型没有显示出来');
+    }
   });
-  scene.add(box.root);
-  applyFold();
-  if (framing) frameCamera();
+}
+
+function applyMeasuredSize(shape) {
+  meshPreview.sized = true;
+  const w = THREE.MathUtils.clamp(Math.round(shape.rawSize.x) || state.w, 30, 600);
+  const d = THREE.MathUtils.clamp(Math.round(shape.rawSize.z) || state.d, 20, 600);
+  const h = THREE.MathUtils.clamp(Math.round(shape.rawSize.y) || state.h, 30, 800);
+  state.w = w;
+  state.d = d;
+  state.h = h;
+  document.querySelector('#size-w').value = String(w);
+  document.querySelector('#size-d').value = String(d);
+  document.querySelector('#size-h').value = String(h);
+  document.querySelector('#upload-w').value = String(w);
+  document.querySelector('#upload-d').value = String(d);
+  document.querySelector('#upload-h').value = String(h);
+  shape.setSize(worldSize());
 }
 
 function applyFold() {
@@ -347,12 +403,12 @@ function setStatus(message) {
   document.querySelector('#export-status').textContent = message || '';
 }
 
-function refreshExportPreview() {
-  renderer.render(scene, camera);
-  const src = renderer.domElement;
+function paintViewShot(src, maxEdge) {
+  const longest = Math.max(src.width, src.height, 1);
+  const scale = maxEdge ? Math.min(1, maxEdge / longest) : 1;
   const out = document.createElement('canvas');
-  out.width = src.width;
-  out.height = src.height;
+  out.width = Math.max(1, Math.round(src.width * scale));
+  out.height = Math.max(1, Math.round(src.height * scale));
   const ctx = out.getContext('2d');
   const gradient = ctx.createRadialGradient(
     out.width * 0.5,
@@ -366,8 +422,18 @@ function refreshExportPreview() {
   gradient.addColorStop(1, '#d0d0d0');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, out.width, out.height);
-  ctx.drawImage(src, 0, 0);
-  document.querySelector('#export-preview').src = out.toDataURL('image/jpeg', 0.7);
+  ctx.drawImage(src, 0, 0, out.width, out.height);
+  return out;
+}
+
+function capturePreviewDataUrl() {
+  renderer.render(scene, camera);
+  return paintViewShot(renderer.domElement, 960).toDataURL('image/jpeg', 0.82);
+}
+
+function refreshExportPreview() {
+  renderer.render(scene, camera);
+  document.querySelector('#export-preview').src = paintViewShot(renderer.domElement).toDataURL('image/jpeg', 0.7);
   const preview = document.querySelector('#export-dieline-preview');
   const source = renderDielineCanvas({
     layout: currentLayout(),
@@ -621,6 +687,7 @@ spinBtn.addEventListener('click', () => {
 foldInput.addEventListener('input', () => {
   state.fold = Number(foldInput.value) / 100;
   applyFold();
+  if (box && box.foldable === false) setStatus('这个模型没有合页，滑杆不能把它展开。');
 });
 
 function onAxisScale() {
@@ -677,8 +744,10 @@ function onSizeInput() {
     const prev = `${state.w}-${state.h}-${state.d}`;
     readSizes();
     if (prev === `${state.w}-${state.h}-${state.d}`) return;
-    const match = MODELS.find((item) => (item.kind || 'box') === state.kind && item.w === state.w && item.d === state.d && item.h === state.h);
-    state.modelId = match ? match.id : '';
+    if (state.kind !== 'mesh') {
+      const match = MODELS.find((item) => (item.kind || 'box') === state.kind && item.w === state.w && item.d === state.d && item.h === state.h);
+      state.modelId = match ? match.id : '';
+    }
     markModel();
     if (state.imageName === '示例包装图' && state.image) {
       state.image = sampleForCurrent();
@@ -692,6 +761,31 @@ function onSizeInput() {
 document.querySelectorAll('#size-w, #size-h, #size-d').forEach((input) => {
   input.addEventListener('input', onSizeInput);
 });
+document.querySelectorAll('#upload-w, #upload-d, #upload-h').forEach((input) => {
+  input.addEventListener('input', () => {
+    if (meshPreview) meshPreview.sized = true;
+    document.querySelector('#size-w').value = document.querySelector('#upload-w').value;
+    document.querySelector('#size-d').value = document.querySelector('#upload-d').value;
+    document.querySelector('#size-h').value = document.querySelector('#upload-h').value;
+    onSizeInput();
+  });
+});
+document.querySelector('#upload-file').addEventListener('change', (event) => {
+  const [file] = event.target.files || [];
+  if (!file) return;
+  if (meshPreview?.url) URL.revokeObjectURL(meshPreview.url);
+  meshPreview = { url: URL.createObjectURL(file), name: file.name, sized: false };
+  state.kind = 'mesh';
+  state.modelId = '';
+  state.image = null;
+  state.imageName = file.name;
+  state.placement = null;
+  state.faceImages = {};
+  fileName.textContent = `当前：${file.name}`;
+  framing = true;
+  setStatus('正在读取模型…');
+  rebuildBox();
+});
 
 function showPage(page) {
   document.body.dataset.page = page;
@@ -700,6 +794,8 @@ function showPage(page) {
   });
   document.querySelector('[data-page-panel="edit"]').hidden = page !== 'edit';
   document.querySelector('[data-page-panel="mockup"]').hidden = page !== 'mockup';
+  document.querySelector('[data-page-panel="upload"]').hidden = page !== 'upload';
+  if (page === 'upload') refreshUploadForm();
   hideFaceMenu();
   requestAnimationFrame(() => {
     resize();
@@ -710,6 +806,10 @@ function showPage(page) {
 let artToken = 0;
 
 function applyModel(model, options = {}) {
+  if (meshPreview?.url) {
+    URL.revokeObjectURL(meshPreview.url);
+    meshPreview = null;
+  }
   if (model.memberOnly && !isMember()) {
     openMember(`「${model.name}」是会员样例。`);
     return;
@@ -726,9 +826,18 @@ function applyModel(model, options = {}) {
   document.querySelector('#size-w').value = String(model.w);
   document.querySelector('#size-d').value = String(model.d);
   document.querySelector('#size-h').value = String(model.h);
+  document.querySelector('#upload-w').value = String(model.w);
+  document.querySelector('#upload-d').value = String(model.d);
+  document.querySelector('#upload-h').value = String(model.h);
   foldInput.value = String(Math.round(model.fold * 100));
   applyPaper(model.paper || 'white');
-  if (options.keepImage) {
+  if (nextKind === 'mesh') {
+    state.image = null;
+    state.imageName = model.name;
+    state.placement = null;
+    state.faceImages = {};
+    fileName.textContent = `当前：${model.name}（上传模型，按文件显示）`;
+  } else if (options.keepImage) {
     state.placement = state.image ? containPlacement(state.image, currentLayout()) : null;
   } else if (model.artUrl && !sameArt) {
     state.image = null;
@@ -797,13 +906,18 @@ function selectTag(categoryId, tag) {
   renderModels();
 }
 
+function categoryLabel(category) {
+  if (category.id === 'bag') return '袋子 & 小袋';
+  return category.name;
+}
+
 function renderLibraryChrome() {
-  const keyword = librarySearch.value.trim();
+  const keyword = source === 'mine' ? '' : librarySearch.value.trim();
   libraryChips.replaceChildren();
   for (const category of CATEGORIES.filter((item) => item.id !== 'more')) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.textContent = category.id === 'bag' ? '袋子 & 小袋' : category.name;
+    button.textContent = categoryLabel(category);
     button.classList.toggle('active', category.id === activeCategory);
     button.addEventListener('click', () => {
       const tags = tagsOf(category.id);
@@ -846,20 +960,23 @@ function appendModelCard(model) {
   button.className = 'model-card';
   button.dataset.model = model.id;
   button.title = model.name;
-  const thumb = document.createElement('canvas');
-  thumb.width = 320;
-  thumb.height = 320;
-  drawModelThumb(thumb, model);
+  const thumb = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 320;
+    drawModelThumb(canvas, { tint: '#f4f0e8', ...model });
+    return canvas;
+  };
   if (model.coverUrl) {
     const photo = document.createElement('img');
     photo.alt = model.name;
     photo.src = `${model.coverUrl}?v=4`;
     photo.addEventListener('error', () => {
-      photo.replaceWith(thumb);
+      photo.replaceWith(thumb());
     });
     button.append(photo);
   } else {
-    button.append(thumb);
+    button.append(thumb());
   }
   if (model.memberOnly) {
     const badge = document.createElement('span');
@@ -889,22 +1006,19 @@ function appendModelCard(model) {
 function renderModels() {
   modelGrid.replaceChildren();
   libraryHint.hidden = true;
-  if (source === 'mine') {
-    librarySearchWrap.hidden = true;
-    libraryBar.hidden = true;
-    libraryGroups.hidden = true;
-    modelHeading.hidden = false;
-    modelHeading.textContent = '我的';
-    loadWorks();
-    return;
-  }
-  librarySearchWrap.hidden = false;
+  librarySearchWrap.hidden = source === 'mine';
   libraryBar.hidden = false;
+  libraryToggle.hidden = false;
   renderLibraryChrome();
-  const keyword = librarySearch.value.trim();
+  const keyword = source === 'mine' ? '' : librarySearch.value.trim();
   modelHeading.hidden = libraryOpen;
   modelGrid.hidden = libraryOpen;
   if (libraryOpen) return;
+  if (source === 'mine') {
+    modelHeading.textContent = activeTag;
+    loadWorks();
+    return;
+  }
   const models = MODELS.filter((item) => {
     if (keyword) return `${item.name}${item.tag}${item.category}`.includes(keyword);
     return item.tag === activeTag && item.category === activeCategory;
@@ -915,22 +1029,35 @@ function renderModels() {
     libraryHint.textContent = '这个分类里还没有样例。';
     return;
   }
-  for (const model of models) appendModelCard(model);
+  for (const model of models) {
+    try {
+      appendModelCard(model);
+    } catch (error) {
+      console.error(error);
+    }
+  }
   markModel();
 }
 
 async function loadWorks() {
-  const response = await fetch(`${API_BASE}/api/works`, { headers: authHeaders() });
+  const category = activeCategory;
+  const tag = activeTag;
+  const response = await fetch(
+    `${API_BASE}/api/works?category=${encodeURIComponent(category)}&tag=${encodeURIComponent(tag)}`,
+    { headers: authHeaders() },
+  );
+  if (source !== 'mine' || category !== activeCategory || tag !== activeTag) return;
   if (!response.ok) {
     modelHeading.textContent = '我的作品暂时读不出来';
     return;
   }
   const data = await response.json();
+  if (source !== 'mine' || category !== activeCategory || tag !== activeTag) return;
   modelGrid.replaceChildren();
   if (!data.data?.length) {
     const empty = document.createElement('p');
     empty.className = 'hint';
-    empty.textContent = '还没有导出记录。在样机或视频里导出一次后会出现在这里。';
+    empty.textContent = '这个分类里还没有导出。导出一次后会出现在这里。';
     modelGrid.append(empty);
     return;
   }
@@ -986,13 +1113,15 @@ function loadDataUrl(url) {
 
 async function saveWork() {
   const model = currentModel();
-  const preview = renderer.domElement.toDataURL('image/jpeg', 0.7);
+  const preview = capturePreviewDataUrl();
   await fetch(`${API_BASE}/api/works`, {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({
       title: model.name || '导出样机',
       modelCode: model.id,
+      categoryCode: model.category || '',
+      tagName: model.tag || '',
       preview,
       design: {
         modelCode: model.id,
@@ -1089,7 +1218,7 @@ async function applyAccess() {
 
 async function initCatalog() {
   if (!await applyAccess()) return;
-  const response = await fetch(`${API_BASE}/api/catalog`, { headers: authHeaders() });
+  const response = await fetch(`${API_BASE}/api/catalog`, { headers: authHeaders(), cache: 'no-store' });
   if (response.status === 401) {
     logout();
     return;
@@ -1100,6 +1229,148 @@ async function initCatalog() {
   MODELS = data.models || [];
   renderModels();
 }
+
+let taxonomy = { categories: [], tags: [] };
+
+function fillUploadTags() {
+  const categoryId = document.querySelector('#upload-category').value;
+  const tagSelect = document.querySelector('#upload-tag');
+  const previous = tagSelect.value;
+  tagSelect.replaceChildren();
+  for (const tag of taxonomy.tags.filter((item) => item.categoryId === categoryId)) {
+    const option = document.createElement('option');
+    option.value = String(tag.id);
+    option.textContent = tag.name;
+    tagSelect.append(option);
+  }
+  if ([...tagSelect.options].some((option) => option.value === previous)) tagSelect.value = previous;
+}
+
+async function refreshUploadList() {
+  const list = document.querySelector('#upload-list');
+  const response = await fetch(`${API_BASE}/api/library/models`, { headers: authHeaders() });
+  list.replaceChildren();
+  if (!response.ok) return;
+  const data = await response.json();
+  if (!data.data?.length) {
+    const empty = document.createElement('p');
+    empty.className = 'hint';
+    empty.textContent = '还没有上传过模型。';
+    list.append(empty);
+    return;
+  }
+  for (const model of data.data) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.textContent = `${model.name} · ${model.tag}`;
+    open.addEventListener('click', async () => {
+      await initCatalog();
+      const fresh = MODELS.find((item) => item.id === model.id) || model;
+      activeCategory = fresh.category;
+      activeTag = fresh.tag;
+      source = 'library';
+      applyModel(fresh);
+      showPage('mockup');
+      renderModels();
+    });
+    list.append(open);
+  }
+}
+
+async function refreshUploadForm() {
+  const status = document.querySelector('#upload-status');
+  const response = await fetch(`${API_BASE}/api/library/taxonomy`, { headers: authHeaders() });
+  if (!response.ok) {
+    status.textContent = '分类没有读出来';
+    return;
+  }
+  taxonomy = await response.json();
+  const categorySelect = document.querySelector('#upload-category');
+  const previous = categorySelect.value;
+  categorySelect.replaceChildren();
+  for (const category of taxonomy.categories) {
+    const option = document.createElement('option');
+    option.value = category.id;
+    option.textContent = category.name;
+    categorySelect.append(option);
+  }
+  if ([...categorySelect.options].some((option) => option.value === previous)) categorySelect.value = previous;
+  fillUploadTags();
+  await refreshUploadList();
+}
+
+document.querySelector('#upload-category').addEventListener('change', fillUploadTags);
+document.querySelector('#upload-add-category').addEventListener('click', async () => {
+  const name = window.prompt('新的大类名称');
+  if (!name?.trim()) return;
+  const response = await fetch(`${API_BASE}/api/library/categories`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.trim() }),
+  });
+  const data = await response.json().catch(() => ({}));
+  document.querySelector('#upload-status').textContent = response.ok ? '大类已添加' : (data.message || '没有加上');
+  if (data.id) {
+    await refreshUploadForm();
+    document.querySelector('#upload-category').value = data.id;
+    fillUploadTags();
+  }
+});
+document.querySelector('#upload-add-tag').addEventListener('click', async () => {
+  const categoryCode = document.querySelector('#upload-category').value;
+  if (!categoryCode) return;
+  const name = window.prompt('新的标签名称，会归在当前大类下面');
+  if (!name?.trim()) return;
+  const response = await fetch(`${API_BASE}/api/library/tags`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ categoryCode, name: name.trim() }),
+  });
+  const data = await response.json().catch(() => ({}));
+  document.querySelector('#upload-status').textContent = response.ok ? '标签已添加' : (data.message || '没有加上');
+  if (data.id) {
+    await refreshUploadForm();
+    document.querySelector('#upload-category').value = categoryCode;
+    fillUploadTags();
+    document.querySelector('#upload-tag').value = String(data.id);
+  }
+});
+document.querySelector('#upload-submit').addEventListener('click', async () => {
+  const status = document.querySelector('#upload-status');
+  const file = document.querySelector('#upload-file').files?.[0];
+  const name = document.querySelector('#upload-name').value.trim();
+  const tagId = document.querySelector('#upload-tag').value;
+  if (!name || !file || !tagId) {
+    status.textContent = '请填写名称，选择标签，并选择 GLB 文件';
+    return;
+  }
+  const body = new FormData();
+  body.set('name', name);
+  body.set('categoryCode', document.querySelector('#upload-category').value);
+  body.set('tagId', tagId);
+  body.set('width', document.querySelector('#upload-w').value);
+  body.set('depth', document.querySelector('#upload-d').value);
+  body.set('height', document.querySelector('#upload-h').value);
+  body.set('file', file);
+  status.textContent = '正在上传…';
+  const response = await fetch(`${API_BASE}/api/library/models`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    status.textContent = data.message || '上传失败';
+    return;
+  }
+  status.textContent = '已放进资源库。';
+  await initCatalog();
+  const fresh = MODELS.find((item) => item.id === data.id) || data;
+  activeCategory = fresh.category;
+  activeTag = fresh.tag;
+  applyModel(fresh);
+  await refreshUploadList();
+});
 
 document.querySelector('#logout').addEventListener('click', logout);
 document.querySelectorAll('[data-source]').forEach((button) => {

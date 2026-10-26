@@ -16,6 +16,13 @@ export const FACE_NAMES = {
 
 export function layoutFor(model) {
   const kind = model.kind || 'box';
+  if (kind === 'mesh') {
+    return {
+      totalW: model.w || 100,
+      totalH: model.h || 100,
+      panels: { front: { x: 0, y: 0, w: model.w || 100, h: model.h || 100 } },
+    };
+  }
   if (kind === 'box') return netLayout(model.w, model.h, model.d);
   if (kind === 'pouch') {
     return {

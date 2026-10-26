@@ -1,7 +1,7 @@
 import mysql from 'mysql2/promise';
 import { CATEGORIES, MODELS } from './catalog-data.js';
 import { config } from './config.js';
-import { pool } from './db.js';
+import { ensureWorksCategory, pool } from './db.js';
 import { artSvg, coverSvg } from './artwork.js';
 import { artKey, coverKey, ensureBucket, putCover, putObject } from './storage.js';
 
@@ -37,6 +37,8 @@ const statements = [
     model_code VARCHAR(64) NOT NULL,
     design_json MEDIUMTEXT NOT NULL,
     preview_key VARCHAR(255) NULL,
+    category_code VARCHAR(32) NULL,
+    tag_name VARCHAR(64) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_works_user (user_id, id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
@@ -129,6 +131,7 @@ async function seed() {
     `DELETE FROM models WHERE code NOT IN (${codes.map(() => '?').join(',')})`,
     codes,
   );
+  await ensureWorksCategory();
   console.log(`已写入 ${CATEGORIES.length} 个分类、${MODELS.length} 个样机，封面位于 ${coverKey('<code>')}`);
   await pool.end();
 }
