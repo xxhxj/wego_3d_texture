@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createFlipTopBox } from './flipTopBox.js';
 import { createFoldableBox } from './foldBox.js';
 
 function outsideMaterial(texture, color, roughness = 0.72) {
@@ -230,6 +231,17 @@ export function createShape(model, options) {
       textures: options.textures,
       edgeColor: options.edgeColor,
       handle: model.handle,
+    });
+  }
+  if (kind === 'flipTop') {
+    return createFlipTopBox({
+      width: options.width,
+      height: options.height,
+      depth: options.depth,
+      thickness: options.thickness,
+      textures: options.textures,
+      edgeColor: options.edgeColor,
+      insideColor: options.insideColor,
     });
   }
   return createFoldableBox({

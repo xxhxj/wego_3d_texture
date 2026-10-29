@@ -1,7 +1,6 @@
 import express from 'express';
 import { config } from './config.js';
-import { ensureLibrarySchema, ensureWorksCategory, pool } from './db.js';
-import { libraryRouter, listUploadedModels, mapUpload } from './library.js';
+import { ensureWorksCategory, pool } from './db.js';
 import { requireAuth } from './sso.js';
 import { coverUrl, minio, putObject } from './storage.js';
 
@@ -12,7 +11,6 @@ app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   next();
 });
-app.use('/api/library', libraryRouter);
 
 function mapModel(row) {
   return {
@@ -73,16 +71,12 @@ app.get('/api/catalog', requireAuth, async (_req, res, next) => {
       'SELECT * FROM models ORDER BY sort_order, code',
     );
     res.setHeader('Cache-Control', 'no-store');
-    const uploads = await listUploadedModels();
-    const used = new Set([
-      ...models.map((item) => item.category_code),
-      ...uploads.map((item) => item.category_code),
-    ]);
+    const used = new Set(models.map((item) => item.category_code));
     res.json({
       categories: categories
         .filter((item) => used.has(item.code))
         .map((item) => ({ id: item.code, name: item.name })),
-      models: [...models.map(mapModel), ...uploads.map(mapUpload)],
+      models: models.map(mapModel),
     });
   } catch (error) {
     next(error);
@@ -179,7 +173,7 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ ok: false, message: '服务暂时不可用' });
 });
 
-Promise.all([ensureWorksCategory(), ensureLibrarySchema()]).then(() => {
+ensureWorksCategory().then(() => {
   app.listen(config.port, '0.0.0.0', () => {
     console.log(`api http://127.0.0.1:${config.port}`);
   });

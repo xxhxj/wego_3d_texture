@@ -42,13 +42,6 @@
             </svg>
             样机
           </button>
-          <button class="rail-btn" type="button" data-page="upload" hidden>
-            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-              <path fill="none" stroke="currentColor" stroke-width="1.7" d="M12 16V6M8 9l4-4 4 4" />
-              <path fill="none" stroke="currentColor" stroke-width="1.7" d="M5 16v2.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V16" />
-            </svg>
-            上传
-          </button>
         </nav>
         <aside class="panel">
           <div data-page-panel="edit">
@@ -126,37 +119,6 @@
               <div class="library-heading" id="model-heading">方形盒</div>
               <p class="hint" id="library-hint" hidden></p>
               <div id="model-grid" class="model-grid"></div>
-            </section>
-          </div>
-          <div data-page-panel="upload" hidden>
-            <section class="block">
-              <div class="block-title">3D模型上传</div>
-              <p class="hint">选中 GLB 后右侧立刻预览。改宽、深、高会按三个方向拉开模型。没有合页的文件不能展开，也就不能按刀版贴图。</p>
-              <label class="field">名称
-                <input id="upload-name" type="text" maxlength="128" placeholder="例如 样例盒" />
-              </label>
-              <label class="field">大类
-                <select id="upload-category"></select>
-              </label>
-              <button id="upload-add-category" class="btn ghost compact" type="button">新增大类</button>
-              <label class="field">标签
-                <select id="upload-tag"></select>
-              </label>
-              <button id="upload-add-tag" class="btn ghost compact" type="button">新增标签</button>
-              <div class="sizes">
-                <label><span>宽 mm</span><input id="upload-w" type="number" min="10" max="2000" value="120" /></label>
-                <label><span>深 mm</span><input id="upload-d" type="number" min="10" max="2000" value="80" /></label>
-                <label><span>高 mm</span><input id="upload-h" type="number" min="10" max="2000" value="160" /></label>
-              </div>
-              <label class="field">GLB 文件
-                <input id="upload-file" type="file" accept=".glb,model/gltf-binary" />
-              </label>
-              <button id="upload-submit" class="btn primary" type="button">上传到资源库</button>
-              <p id="upload-status" class="hint"></p>
-            </section>
-            <section class="block">
-              <div class="block-title">已上传</div>
-              <div id="upload-list" class="upload-list"></div>
             </section>
           </div>
         </aside>

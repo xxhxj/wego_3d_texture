@@ -1,12 +1,15 @@
-import { netLayout } from './net.js';
+import { flipTopNetLayout, netLayout } from './net.js';
 
 export const FACE_NAMES = {
   front: '正面',
   back: '背面',
   left: '左侧面',
   right: '右侧面',
-  top: '顶面',
+  top: '顶盖',
   bottom: '底面',
+  tuck: '插舌',
+  leftDust: '左防尘翼',
+  rightDust: '右防尘翼',
   label: '瓶贴',
   cap: '瓶盖',
   lid: '顶盖',
@@ -23,6 +26,7 @@ export function layoutFor(model) {
       panels: { front: { x: 0, y: 0, w: model.w || 100, h: model.h || 100 } },
     };
   }
+  if (kind === 'flipTop') return flipTopNetLayout(model.w, model.h, model.d);
   if (kind === 'box') return netLayout(model.w, model.h, model.d);
   if (kind === 'pouch') {
     return {
@@ -78,20 +82,40 @@ function drawBoxThumb(ctx, model, width, height) {
   const lift = model.d * scale * 0.28;
   const originX = width * 0.46 - side * 0.35;
   const originY = height * 0.72;
-  const lid = model.fold < 0.9 ? (1 - model.fold) * Math.min(28, frontH * 0.45) : 0;
+  const lidOpen = model.fold < 0.9 ? (1 - model.fold) * Math.min(28, frontH * 0.45) : 0;
+  const flipLid = model.kind === 'flipTop';
 
   ctx.lineJoin = 'round';
   ctx.lineWidth = 1.2;
   ctx.strokeStyle = '#cfc9c0';
   ctx.fillStyle = mix(model.tint, 14);
   ctx.beginPath();
-  ctx.moveTo(originX, originY - frontH);
-  ctx.lineTo(originX + side, originY - frontH - lift - lid);
-  ctx.lineTo(originX + frontW + side, originY - frontH - lift - lid);
-  ctx.lineTo(originX + frontW, originY - frontH);
+  if (flipLid) {
+    // 后开盖：顶盖略向后掀
+    ctx.moveTo(originX, originY - frontH);
+    ctx.lineTo(originX + side * 0.35, originY - frontH - lift - lidOpen * 0.35);
+    ctx.lineTo(originX + frontW + side * 0.35, originY - frontH - lift - lidOpen * 0.35);
+    ctx.lineTo(originX + frontW, originY - frontH);
+  } else {
+    ctx.moveTo(originX, originY - frontH);
+    ctx.lineTo(originX + side, originY - frontH - lift - lidOpen);
+    ctx.lineTo(originX + frontW + side, originY - frontH - lift - lidOpen);
+    ctx.lineTo(originX + frontW, originY - frontH);
+  }
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
+  if (flipLid) {
+    ctx.fillStyle = mix(model.tint, 8);
+    ctx.beginPath();
+    ctx.moveTo(originX + frontW * 0.18, originY - frontH);
+    ctx.lineTo(originX + frontW * 0.28, originY - frontH - Math.max(6, frontH * 0.12));
+    ctx.lineTo(originX + frontW * 0.72, originY - frontH - Math.max(6, frontH * 0.12));
+    ctx.lineTo(originX + frontW * 0.82, originY - frontH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
   ctx.fillStyle = model.tint;
   ctx.beginPath();
   ctx.rect(originX, originY - frontH, frontW, frontH);

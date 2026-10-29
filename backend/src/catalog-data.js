@@ -45,6 +45,15 @@ const singles = [
   ['lidbox', 'box', '带盖盒', '天地盖', { w: 180, d: 140, h: 80, fold: 0.8, tint: '#fff' }],
   ['hang', 'box', '挂盒', '挂盒', { w: 90, d: 30, h: 160, tint: '#f7f4ee', member: true }],
   ['tuck', 'box', '插口盒', '插口盒', { w: 140, d: 50, h: 180, fold: 0.86 }],
+  ['flip-top', 'box', '插口盒', '翻盖插口盒', {
+    kind: 'flipTop', w: 100, d: 100, h: 42, fold: 1, tint: '#ffffff',
+  }],
+  ['flip-top-kraft', 'box', '插口盒', '牛皮翻盖盒', {
+    kind: 'flipTop', w: 120, d: 120, h: 50, fold: 1, tint: '#d7b07a', paper: 'kraft',
+  }],
+  ['flip-top-tall', 'box', '产品盒', '立式翻盖盒', {
+    kind: 'flipTop', w: 80, d: 80, h: 120, fold: 0.92, tint: '#f7f4ee',
+  }],
   ['poly', 'box', '多边形盒', '六角盒', { w: 120, d: 104, h: 80, tint: '#efe8ff', member: true }],
   ['plastic', 'box', '塑料盒', '塑料盒', { w: 160, d: 110, h: 60, tint: '#e7f2f6', member: true }],
   ['misc', 'box', '其他', '通用包装', { w: 160, d: 80, h: 120 }],

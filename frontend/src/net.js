@@ -14,6 +14,34 @@ export function netLayout(width, height, depth) {
   };
 }
 
+/**
+ * 翻盖插口盒刀版：墙体一排，盖和插舌接在背面上方，底面接在正面下方，
+ * 左右墙上方各接一片防尘翼。
+ */
+export function flipTopNetLayout(width, height, depth) {
+  const tuckH = Math.min(depth * 0.52, height * 0.9);
+  const dustH = Math.min(depth * 0.4, width * 0.26);
+  const wallY = tuckH + depth;
+  const totalW = depth + width + depth + width;
+  const totalH = tuckH + depth + height + depth;
+  return {
+    totalW,
+    totalH,
+    style: 'flipTop',
+    panels: {
+      tuck: { x: depth + width + depth, y: 0, w: width, h: tuckH },
+      top: { x: depth + width + depth, y: tuckH, w: width, h: depth },
+      leftDust: { x: 0, y: wallY - dustH, w: depth, h: dustH },
+      rightDust: { x: depth + width, y: wallY - dustH, w: depth, h: dustH },
+      left: { x: 0, y: wallY, w: depth, h: height },
+      front: { x: depth, y: wallY, w: width, h: height },
+      right: { x: depth + width, y: wallY, w: depth, h: height },
+      back: { x: depth + width + depth, y: wallY, w: width, h: height },
+      bottom: { x: depth, y: wallY + height, w: width, h: depth },
+    },
+  };
+}
+
 export const PANEL_KEYS = ['front', 'back', 'left', 'right', 'top', 'bottom'];
 
 function clipDraw(ctx, image, sx, sy, sw, sh, dx, dy, dw, dh) {
@@ -126,6 +154,27 @@ function isBoxNet(layout) {
 }
 
 export function dielineGeometry(layout) {
+  if (layout.style === 'flipTop') {
+    const { panels } = layout;
+    const folds = [
+      [panels.front.x, panels.front.y, panels.front.x + panels.front.w, panels.front.y],
+      [panels.front.x, panels.bottom.y, panels.front.x + panels.front.w, panels.bottom.y],
+      [panels.front.x, panels.front.y, panels.front.x, panels.front.y + panels.front.h],
+      [panels.right.x, panels.front.y, panels.right.x, panels.front.y + panels.front.h],
+      [panels.back.x, panels.front.y, panels.back.x, panels.front.y + panels.front.h],
+      [panels.top.x, panels.top.y, panels.top.x + panels.top.w, panels.top.y],
+      [panels.top.x, panels.top.y + panels.top.h, panels.top.x + panels.top.w, panels.top.y + panels.top.h],
+      [panels.left.x, panels.left.y, panels.left.x + panels.left.w, panels.left.y],
+      [panels.right.x, panels.right.y, panels.right.x + panels.right.w, panels.right.y],
+    ];
+    const loops = Object.values(panels).map((panel) => [
+      [panel.x, panel.y],
+      [panel.x + panel.w, panel.y],
+      [panel.x + panel.w, panel.y + panel.h],
+      [panel.x, panel.y + panel.h],
+    ]);
+    return { cut: loops[0] || [], loops, folds };
+  }
   if (!isBoxNet(layout)) {
     const loops = Object.values(layout.panels).map((panel) => [
       [panel.x, panel.y],
@@ -172,22 +221,40 @@ export function dielineGeometry(layout) {
 }
 
 export function strokeNet(ctx, layout, pixelScale = 1) {
-  if (!isBoxNet(layout)) {
-    const unit = 1 / pixelScale;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
+  const unit = 1 / pixelScale;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  if (!isBoxNet(layout) || layout.style === 'flipTop') {
+    const { folds, loops } = dielineGeometry(layout);
     ctx.setLineDash([]);
     ctx.strokeStyle = '#3c7dff';
     ctx.lineWidth = 1.6 * unit;
-    for (const panel of Object.values(layout.panels)) {
-      ctx.strokeRect(panel.x, panel.y, panel.w, panel.h);
+    for (const loop of loops || Object.values(layout.panels).map((panel) => [
+      [panel.x, panel.y],
+      [panel.x + panel.w, panel.y],
+      [panel.x + panel.w, panel.y + panel.h],
+      [panel.x, panel.y + panel.h],
+    ])) {
+      ctx.beginPath();
+      loop.forEach(([x, y], index) => (index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      ctx.closePath();
+      ctx.stroke();
+    }
+    if (folds?.length) {
+      ctx.setLineDash([5 * unit, 4 * unit]);
+      ctx.strokeStyle = '#7aa7ff';
+      ctx.lineWidth = 1.1 * unit;
+      ctx.beginPath();
+      for (const [x1, y1, x2, y2] of folds) {
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
     return;
   }
   const { cut, folds } = dielineGeometry(layout);
-  const unit = 1 / pixelScale;
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
   ctx.setLineDash([]);
   ctx.strokeStyle = '#3c7dff';
   ctx.lineWidth = 1.6 * unit;
@@ -208,8 +275,8 @@ export function strokeNet(ctx, layout, pixelScale = 1) {
 }
 
 /** 生成一张和刀版同比例的示例包装图，方便直接看到贴图如何绕到侧面。 */
-export function makeSampleArtwork(width, height, depth) {
-  const layout = netLayout(width, height, depth);
+export function makeSampleArtwork(width, height, depth, layout = null) {
+  layout = layout || netLayout(width, height, depth);
   const ppm = 5;
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(layout.totalW * ppm);
