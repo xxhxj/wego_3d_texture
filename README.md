@@ -24,9 +24,12 @@
 wego_3d_texture/
 ├── frontend/                 # 页面与三维预览
 │   ├── index.html
+│   ├── share.html            # 公开分享页 /share
 │   ├── vite.config.js        # 5173，并把 /api 代理到 3000
 │   └── src/
-│       ├── main.js           # 场景、贴图、导出，样机列表来自接口
+│       ├── main.js           # 场景、贴图、导出、分享，样机列表来自接口
+│       ├── share.js          # 公开分享页入口
+│       ├── share-page.css    # 分享页样式
 │       ├── models.js         # 刀版布局与缩略图绘制
 │       ├── shapes.js         # 盒 / 瓶罐杯 / 袋
 │       ├── foldBox.js
@@ -79,7 +82,7 @@ npm run dev
 
 浏览器打开 `http://localhost:5173`。未登录会跳到同级目录的单点系统 `wego_sso`（http://127.0.0.1:5174）。样机页的分类和封面来自 `/api/catalog`，左侧「编辑 / 样机」由单点菜单控制。
 
-`backend/.env` 里的 `SSO_JWT_SECRET` 必须和 `wego_sso/backend/.env` 一致。管理员 `admin` / `admin123`，样机账号 `designer` / `designer123`。
+`backend/.env` 配置 `SSO_API_URL`（默认 `http://127.0.0.1:3001`）即可，不再需要 `SSO_JWT_SECRET`。后端从 SSO 公钥端点验签，并只接受 `aud` 包含 `wego-mockup` 的令牌。管理员 `admin` / `admin123`，样机账号 `designer` / `designer123`。
 
 常用命令：
 
@@ -90,6 +93,38 @@ npm run preview
 ```
 
 `preview` 同样把 `/api` 代理到本机 3000，所以接口进程要一起开着。
+
+## 分享
+
+导出弹窗（顶部或底部「导出」）新增 **分享** 标签：
+
+- 首次打开发送会为当前设计生成一个快照，链接形如 `http://127.0.0.1:5173/share?filter_url=<token>`；
+- 右侧可以切换「移除官方标志」「移除水印」，设置会实时写回分享记录；
+- 「复制链接」复制公开地址，「停止分享」让该地址立即失效（公开接口返回 410）；
+- 左侧是可直接旋转、缩放、展开/闭合的 3D 预览，底部保留展开/闭合滑杆；
+- 公开页 `/share` 复刻导出弹窗的标签和右侧面板，访客只能查看和复制链接，不能修改分享设置。
+
+分享数据在 `wego_mockup.shares`，预览图在 MinIO 的 `shares/{userId}/{token}.jpg`。后端启动时会自动建表，不需要额外 seed。
+
+接口：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/shares` | 登录用户创建分享快照 |
+| `GET` | `/api/shares/:token` | 公开读取（仅返回面贴图、尺寸和展示开关） |
+| `PATCH` | `/api/shares/:token` | 分享者修改标志/水印开关 |
+| `DELETE` | `/api/shares/:token` | 分享者停止分享 |
+
+说明：
+
+- 分享是**设计快照**：生成链接后再改尺寸或贴图，需要重新打开发送弹窗生成新链接；旧链接仍然有效，直到手动停止。
+- 3D 预览通过 `buildViewerHtml` 生成，three.js 从 CDN 加载；如果外网不可用，会自动回退到分享预览图。
+- 分享页的旋转/缩放使用 OrbitControls，与 Pacdora 样例保持一致：拖拽旋转，滚轮上滚放大、下滚缩小。
+- 滑杆方向与样例一致：左端「展开」、右端「闭合」，默认在右端闭合。闭合是盒子，展开是带贴图的 6 面刀版；折叠过程带缓动。
+- 面贴图加载完成后才隐藏预览图；贴图加载失败时保留预览图，不会出现黑盒。
+- 当前盒型的刀版是 6 面简化刀版，样例里的糊口/翼片属于更完整的刀版结构，目前没有存这部分数据，所以展开后的外轮廓会比样例简化。
+- 公开页地址默认取 `location.origin`；如果前端在反向代理后需要固定公网地址，构建时设置 `VITE_PUBLIC_SHARE_BASE=https://你的域名`。
+- 品牌展示使用「包装样机」，没有照搬样例里的 Pacdora 标识。
 
 ## 部署
 
@@ -103,3 +138,11 @@ pm2 start npm --name wego-web -- run preview -- --host 0.0.0.0 --port 5173
 ```
 
 对外建议用 Nginx 把页面和 `/api` 放在同一个域名下：页面走前端，`/api` 转到 3000。封面继续用 `MINIO_PUBLIC_BASE` 指向的对象存储地址。
+
+分享页是独立的 `share.html`。生产环境需要把 `/share` 重写到 `share.html`，否则分享链接会落到首页：
+
+```nginx
+location = /share {
+  rewrite ^ /share.html break;
+}
+```

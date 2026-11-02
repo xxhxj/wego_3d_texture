@@ -60,6 +60,31 @@ export async function ensureLibrarySchema() {
   );
 }
 
+export async function ensureShareSchema() {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS shares (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      token VARCHAR(32) NOT NULL,
+      user_id INT NOT NULL,
+      title VARCHAR(128) NOT NULL,
+      model_code VARCHAR(64) NOT NULL,
+      design_json MEDIUMTEXT NOT NULL,
+      faces_json MEDIUMTEXT NOT NULL,
+      width_mm INT NOT NULL,
+      height_mm INT NOT NULL,
+      depth_mm INT NOT NULL,
+      preview_key VARCHAR(255) NULL,
+      remove_logo TINYINT NOT NULL DEFAULT 0,
+      remove_watermark TINYINT NOT NULL DEFAULT 0,
+      status TINYINT NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_shares_token (token),
+      KEY idx_shares_user (user_id, id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+  );
+}
+
 export async function ensureWorksCategory() {
   for (const sql of [
     'ALTER TABLE works ADD COLUMN category_code VARCHAR(32) NULL',

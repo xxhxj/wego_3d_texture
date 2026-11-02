@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>包装样机 · 分享</title>
+    <link rel="stylesheet" href="/src/share-page.css" />
+  </head>
+  <body class="share-page">
+    <div class="share-bg" id="share-bg"></div>
+    <main class="share-modal" id="share-modal">
+      <header class="share-tabs">
+        <button type="button" class="share-tab" data-tab="mockup">样机</button>
+        <button type="button" class="share-tab" data-tab="dieline">刀版</button>
+        <button type="button" class="share-tab" data-tab="video">视频</button>
+        <button type="button" class="share-tab" data-tab="code">代码</button>
+        <button type="button" class="share-tab active" data-tab="share">分享</button>
+        <a class="share-close" href="/" aria-label="关闭">×</a>
+      </header>
+      <div class="share-body">
+        <section class="share-stage" id="share-stage">
+          <img id="share-fallback" alt="样机预览" />
+          <iframe id="share-viewer" title="样机预览" sandbox="allow-scripts"></iframe>
+          <div class="share-note" id="share-note" hidden>该分享只包含样机预览。</div>
+          <div class="share-brand" id="share-brand">Built by 包装样机</div>
+          <div class="share-watermark" id="share-watermark">包装样机</div>
+        </section>
+        <aside class="share-side">
+          <h2>与他人分享</h2>
+          <p class="share-lead">• 与客户或同事分享你的设计。</p>
+          <label class="share-switch">
+            <input id="share-remove-logo" type="checkbox" disabled />
+            <span>移除官方标志 <i class="info-dot" title="仅分享者可修改">?</i></span>
+          </label>
+          <label class="share-switch">
+            <input id="share-remove-watermark" type="checkbox" disabled />
+            <span>移除水印 <i class="info-dot" title="仅分享者可修改">?</i></span>
+          </label>
+          <input id="share-link" class="share-link" readonly />
+          <span class="share-stop" id="share-stop">停止分享</span>
+          <button id="share-copy" class="share-copy" type="button">复制链接</button>
+          <p class="share-status" id="share-status"></p>
+        </aside>
+      </div>
+    </main>
+    <div class="share-error" id="share-error" hidden>
+      <h1>分享不存在或已停止</h1>
+      <p>请向分享者索取新的链接。</p>
+      <a href="/">打开包装样机</a>
+    </div>
+    <script type="module" src="/src/share.js"></script>
+  </body>
+</html>

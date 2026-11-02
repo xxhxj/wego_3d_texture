@@ -17,7 +17,7 @@ export const config = {
     password: required('MYSQL_PASSWORD'),
     database: required('MYSQL_DATABASE'),
   },
-  jwtSecret: required('SSO_JWT_SECRET'),
+  ssoApi: (process.env.SSO_API_URL || 'http://127.0.0.1:3001').replace(/\/$/, ''),
   ssoDatabase: process.env.SSO_DATABASE || 'wego_sso',
   minio: {
     endPoint: required('MINIO_ENDPOINT'),

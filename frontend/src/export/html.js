@@ -1,6 +1,6 @@
 import { downloadBlob } from './common.js';
 
-export function buildViewerHtml({ width, height, depth, faces }) {
+export function buildViewerHtml({ width, height, depth, faces, background = '#d9d9d9' }) {
   const payload = JSON.stringify({ width, height, depth, faces }).replace(/</g, '\\u003c');
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -9,7 +9,7 @@ export function buildViewerHtml({ width, height, depth, faces }) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>包装样机</title>
   <style>
-    html, body { margin: 0; height: 100%; background: #d9d9d9; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+    html, body { margin: 0; height: 100%; background: ${background}; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
     canvas { width: 100%; height: 100%; display: block; }
     .bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; background: #fff; border-radius: 12px; padding: 8px 12px; box-shadow: 0 8px 24px rgba(0,0,0,.12); font-size: 13px; color: #666; }
     input { width: 160px; }
@@ -19,10 +19,16 @@ export function buildViewerHtml({ width, height, depth, faces }) {
   <script type="application/json" id="design">${payload}</script>
   <div class="bar"><span>展开</span><input id="fold" type="range" min="0" max="100" value="100" /><span>闭合</span></div>
   <script type="importmap">
-    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
   </script>
   <script type="module">
     import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     const design = JSON.parse(document.getElementById("design").textContent);
     const MM = 0.01;
     const w = design.width * MM, h = design.height * MM, d = design.depth * MM, t = 1.4 * MM;
@@ -31,40 +37,86 @@ export function buildViewerHtml({ width, height, depth, faces }) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.body.prepend(renderer.domElement);
     const scene = new THREE.Scene();
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xc8c8c8, 0.85));
-    const key = new THREE.DirectionalLight(0xffffff, 1.8);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.38));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0xc8c8c8, 1.0));
+    const key = new THREE.DirectionalLight(0xffffff, 1.5);
     key.position.set(3, 6, 4);
     scene.add(key);
+    const fill = new THREE.DirectionalLight(0xdde7ff, 0.5);
+    fill.position.set(-4, 2, 2);
+    scene.add(fill);
+
     const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 100);
     const radius = Math.max(w, h, d) * 1.7;
     camera.position.set(radius * 0.95, radius * 0.7, radius * 1.3);
-    const target = new THREE.Vector3(0, 0, 0);
-    let dragging = false, lastX = 0, lastY = 0, yaw = 0.6, pitch = 0.45, dist = radius * 1.8;
-    const canvas = renderer.domElement;
-    canvas.addEventListener("pointerdown", (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
-    window.addEventListener("pointerup", () => { dragging = false; });
-    window.addEventListener("pointermove", (e) => {
-      if (!dragging) return;
-      yaw += (e.clientX - lastX) * 0.008;
-      pitch = Math.max(0.15, Math.min(1.35, pitch + (e.clientY - lastY) * 0.008));
-      lastX = e.clientX; lastY = e.clientY;
-    });
-    canvas.addEventListener("wheel", (e) => { e.preventDefault(); dist = Math.max(radius * 0.6, Math.min(radius * 5, dist * (e.deltaY > 0 ? 1.08 : 0.92))); }, { passive: false });
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, h * 0.02, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enablePan = false;
+    controls.minDistance = radius * 0.55;
+    controls.maxDistance = radius * 5;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 1.0;
+    controls.update();
+    renderer.domElement.addEventListener("pointerdown", () => { controls.autoRotate = false; });
+    setTimeout(() => { controls.autoRotate = false; }, 2600);
 
-    function tex(url) {
-      const texture = new THREE.TextureLoader().load(url);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      return texture;
+    let textureLoaded = 0;
+    let textureFailed = 0;
+    const textureTotal = 6;
+    let announced = false;
+
+    function announceReady() {
+      if (announced) return;
+      announced = true;
+      renderer.render(scene, camera);
+      if (window.parent === window) return;
+      try {
+        window.parent.postMessage({ type: "wego-viewer-ready" }, "*");
+      } catch {
+        // 跨域父页面不可用时忽略。
+      }
     }
+    function maybeReady() {
+      if (textureLoaded + textureFailed >= textureTotal) announceReady();
+    }
+
     function mat(url) {
-      return new THREE.MeshStandardMaterial({ map: tex(url), roughness: 0.82, metalness: 0 });
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xf4f0e8,
+        roughness: 0.82,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      });
+      if (!url) {
+        textureFailed += 1;
+        maybeReady();
+        return material;
+      }
+      new THREE.TextureLoader().load(
+        url,
+        (texture) => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          material.map = texture;
+          material.color.set(0xffffff);
+          material.needsUpdate = true;
+          textureLoaded += 1;
+          maybeReady();
+        },
+        undefined,
+        () => {
+          textureFailed += 1;
+          maybeReady();
+        },
+      );
+      return material;
     }
     function panel(width, height, url) {
       const geo = new THREE.BoxGeometry(width, height, t);
       const edge = new THREE.MeshStandardMaterial({ color: "#f4f0e8", roughness: 0.9 });
-      const inside = new THREE.MeshStandardMaterial({ color: "#f6f1e7", roughness: 0.94 });
       const outside = mat(url);
-      return new THREE.Mesh(geo, [edge, edge, edge, edge, outside, inside]);
+      return new THREE.Mesh(geo, [edge, edge, edge, edge, outside, outside]);
     }
     const root = new THREE.Group();
     const content = new THREE.Group();
@@ -82,18 +134,44 @@ export function buildViewerHtml({ width, height, depth, faces }) {
     const bottomH = new THREE.Group(); bottomH.position.y = -h / 2; front.add(bottomH);
     const bottom = panel(w, d, design.faces.bottom); bottom.position.y = -d / 2; bottomH.add(bottom);
     scene.add(root);
-    function setFold(amount) {
+
+    const shadowCanvas = document.createElement("canvas");
+    shadowCanvas.width = 256;
+    shadowCanvas.height = 256;
+    const shadowContext = shadowCanvas.getContext("2d");
+    const shadowGradient = shadowContext.createRadialGradient(128, 128, 8, 128, 128, 124);
+    shadowGradient.addColorStop(0, "rgba(0,0,0,0.26)");
+    shadowGradient.addColorStop(1, "rgba(0,0,0,0)");
+    shadowContext.fillStyle = shadowGradient;
+    shadowContext.fillRect(0, 0, 256, 256);
+    const shadowMaterial = new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(shadowCanvas),
+      transparent: true,
+      depthWrite: false,
+    });
+    const shadowMesh = new THREE.Mesh(new THREE.PlaneGeometry(w * 3.2, d * 3.2), shadowMaterial);
+    shadowMesh.rotation.x = -Math.PI / 2;
+    shadowMesh.position.y = -h / 2 - 0.006;
+    scene.add(shadowMesh);
+
+    let foldTarget = 1;
+    let foldCurrent = 1;
+    function applyFold(amount) {
       const a = amount * Math.PI / 2;
       leftH.rotation.y = -a; rightH.rotation.y = a; backH.rotation.y = a;
       topH.rotation.x = -a; bottomH.rotation.x = a;
-      const closed = Math.max(w, h, d);
-      const flat = Math.max(w * 2 + d * 2, h + d * 2);
-      const s = closed / flat + (1 - closed / flat) * amount;
+      const s = 0.7 + 0.3 * amount;
       content.scale.setScalar(s);
       content.position.set((1 - amount) * (-w / 2) * s, 0, amount * (d / 2) * s);
+      shadowMaterial.opacity = amount;
+      shadowMesh.visible = amount > 0.04;
+      renderer.render(scene, camera);
     }
-    setFold(1);
-    document.getElementById("fold").addEventListener("input", (e) => setFold(Number(e.target.value) / 100));
+    applyFold(1);
+    document.getElementById("fold").addEventListener("input", (e) => {
+      controls.autoRotate = false;
+      foldTarget = Number(e.target.value) / 100;
+    });
     function resize() {
       renderer.setSize(innerWidth, innerHeight, false);
       camera.aspect = innerWidth / innerHeight;
@@ -102,8 +180,12 @@ export function buildViewerHtml({ width, height, depth, faces }) {
     addEventListener("resize", resize);
     resize();
     function frame() {
-      camera.position.set(Math.sin(yaw) * Math.cos(pitch) * dist, Math.sin(pitch) * dist, Math.cos(yaw) * Math.cos(pitch) * dist);
-      camera.lookAt(target);
+      const delta = foldTarget - foldCurrent;
+      if (Math.abs(delta) > 0.0005) {
+        foldCurrent += delta * 0.18;
+        applyFold(foldCurrent);
+      }
+      controls.update();
       renderer.render(scene, camera);
       requestAnimationFrame(frame);
     }

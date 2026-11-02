@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { renderDielineCanvas, exportDieline } from './export/dieline.js';
-import { exportViewerHtml } from './export/html.js';
+import { buildViewerHtml, exportViewerHtml } from './export/html.js';
 import { exportMockup } from './export/mockup.js';
 import { recordTurntable, VIDEO_STYLES } from './export/video.js';
 import { createDielineEditor } from './dielineEditor.js';
@@ -20,6 +20,7 @@ import {
 
 const MM = 0.01;
 const API_BASE = import.meta.env.VITE_API_BASE || '';
+const SHARE_BASE = (import.meta.env.VITE_PUBLIC_SHARE_BASE || location.origin).replace(/\/$/, '');
 
 let CATEGORIES = [];
 let MODELS = [];
@@ -402,14 +403,269 @@ function refreshExportPreview() {
 }
 
 function openExport() {
+  shareStopped = false;
   document.querySelector('#export-dialog').hidden = false;
+  showExportPanel('mockup');
   refreshExportPreview();
   setStatus('');
+  if (!currentShare?.active) {
+    document.querySelector('#share-link').value = '';
+    document.querySelector('#share-stop').hidden = true;
+    document.querySelector('#share-copy').disabled = true;
+    document.querySelector('#share-status').textContent = '';
+  } else {
+    syncShareState();
+  }
 }
 
 function closeExport() {
   document.querySelector('#export-dialog').hidden = true;
 }
+
+let currentShare = null;
+let shareCreating = false;
+let shareStopped = false;
+
+function shareUrl(token) {
+  return `${SHARE_BASE}/share?filter_url=${encodeURIComponent(token)}`;
+}
+
+function shareSignature() {
+  const image = state.image;
+  const imageKey = image
+    ? `${image.width || image.naturalWidth || 0}x${image.height || image.naturalHeight || 0}:${String(image.src || '').slice(-48)}`
+    : 'none';
+  const placement = state.placement
+    ? `${state.placement.x.toFixed(1)},${state.placement.y.toFixed(1)},${state.placement.w.toFixed(1)},${state.placement.h.toFixed(1)}`
+    : '';
+  return [
+    state.modelId,
+    state.kind,
+    state.w,
+    state.d,
+    state.h,
+    state.fold,
+    state.paper,
+    state.inside,
+    state.imageName,
+    imageKey,
+    placement,
+  ].join('|');
+}
+
+function buildShareDesign() {
+  const model = currentModel();
+  return {
+    modelCode: model.id,
+    kind: state.kind,
+    w: state.w,
+    d: state.d,
+    h: state.h,
+    fold: state.fold,
+    paper: state.paper,
+    inside: state.inside,
+    imageName: state.imageName,
+    image: artworkDataUrl(state.image),
+  };
+}
+
+function buildPanelFaces() {
+  const faces = {};
+  const layout = currentLayout();
+  for (const key of Object.keys(layout.panels)) {
+    const canvas = paintPanelCanvas(
+      state.image,
+      layout,
+      key,
+      state.placement,
+      PAPERS[state.paper].edge,
+      6,
+      state.faceImages[key],
+    );
+    faces[key] = canvas.toDataURL('image/jpeg', 0.86);
+  }
+  const fallback = faces.front || faces.label || faces.wall || faces.back;
+  for (const key of ['front', 'back', 'left', 'right', 'top', 'bottom']) {
+    if (!faces[key] && fallback) faces[key] = fallback;
+  }
+  return faces;
+}
+
+function syncShareOverlays() {
+  const hideLogo = document.querySelector('#share-remove-logo').checked;
+  const hideMark = document.querySelector('#share-remove-watermark').checked;
+  document.querySelector('#share-brand').hidden = hideLogo;
+  document.querySelector('#share-watermark').hidden = hideMark;
+}
+
+function syncShareState() {
+  const link = document.querySelector('#share-link');
+  const copy = document.querySelector('#share-copy');
+  const stop = document.querySelector('#share-stop');
+  const active = Boolean(currentShare?.active);
+  link.value = active ? shareUrl(currentShare.token) : '';
+  copy.disabled = !active;
+  stop.hidden = !active;
+  if (active) {
+    document.querySelector('#share-remove-logo').checked = Boolean(currentShare.removeLogo);
+    document.querySelector('#share-remove-watermark').checked = Boolean(currentShare.removeWatermark);
+  }
+  syncShareOverlays();
+}
+
+function setShareViewer(preview, faces) {
+  const wrap = document.querySelector('#share-viewer-wrap');
+  wrap.classList.remove('ready');
+  const fallback = document.querySelector('#share-viewer-fallback');
+  if (preview) fallback.src = preview;
+  else fallback.removeAttribute('src');
+  const iframe = document.querySelector('#share-viewer');
+  if (state.kind !== 'box') {
+    iframe.hidden = true;
+    iframe.removeAttribute('srcdoc');
+    syncShareOverlays();
+    return;
+  }
+  iframe.hidden = false;
+  iframe.srcdoc = buildViewerHtml({
+    width: state.w,
+    height: state.h,
+    depth: state.d,
+    faces,
+    background: 'transparent',
+  });
+  syncShareOverlays();
+}
+
+async function ensureShare() {
+  if (shareStopped) return null;
+  const signature = shareSignature();
+  if (currentShare?.active && currentShare.signature === signature) {
+    if (currentShare.preview && currentShare.faces) {
+      setShareViewer(currentShare.preview, currentShare.faces);
+    }
+    syncShareState();
+    return currentShare;
+  }
+  if (shareCreating) return null;
+  if (currentShare && currentShare.signature !== signature) currentShare = null;
+  shareCreating = true;
+  const status = document.querySelector('#share-status');
+  const copy = document.querySelector('#share-copy');
+  status.textContent = '正在生成分享链接…';
+  copy.disabled = true;
+  try {
+    const model = currentModel();
+    const preview = capturePreviewDataUrl();
+    const faces = buildPanelFaces();
+    const removeLogo = document.querySelector('#share-remove-logo').checked;
+    const removeWatermark = document.querySelector('#share-remove-watermark').checked;
+    const response = await fetch(`${API_BASE}/api/shares`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: model.name || '未命名样机',
+        modelCode: model.id,
+        design: buildShareDesign(),
+        faces,
+        preview,
+        removeLogo,
+        removeWatermark,
+      }),
+    });
+    if (response.status === 401) {
+      logout();
+      return null;
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || '生成分享链接失败');
+    const payload = data.data || data;
+    currentShare = {
+      token: payload.token,
+      active: true,
+      removeLogo,
+      removeWatermark,
+      signature,
+      preview,
+      faces,
+    };
+    document.querySelector('#share-stop').hidden = false;
+    setShareViewer(preview, faces);
+    syncShareState();
+    status.textContent = '';
+    return currentShare;
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : '生成分享链接失败';
+    syncShareState();
+    return null;
+  } finally {
+    shareCreating = false;
+    copy.disabled = !currentShare?.active;
+  }
+}
+
+async function updateShareFlags() {
+  syncShareOverlays();
+  if (!currentShare?.active) return;
+  const removeLogo = document.querySelector('#share-remove-logo').checked;
+  const removeWatermark = document.querySelector('#share-remove-watermark').checked;
+  currentShare.removeLogo = removeLogo;
+  currentShare.removeWatermark = removeWatermark;
+  const status = document.querySelector('#share-status');
+  try {
+    const response = await fetch(`${API_BASE}/api/shares/${currentShare.token}`, {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ removeLogo, removeWatermark }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || '更新分享设置失败');
+    status.textContent = '分享设置已更新';
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : '更新分享设置失败';
+  }
+}
+
+async function copyShareLink() {
+  const share = currentShare?.active ? currentShare : await ensureShare();
+  if (!share?.active) return;
+  const status = document.querySelector('#share-status');
+  try {
+    await navigator.clipboard.writeText(shareUrl(share.token));
+    status.textContent = '链接已复制';
+  } catch {
+    const input = document.querySelector('#share-link');
+    input.focus();
+    input.select();
+    status.textContent = '请手动复制链接';
+  }
+}
+
+async function stopShare() {
+  if (!currentShare?.active) return;
+  if (!window.confirm('停止分享后，当前链接会立即失效，确定吗？')) return;
+  const status = document.querySelector('#share-status');
+  try {
+    const response = await fetch(`${API_BASE}/api/shares/${currentShare.token}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || '停止分享失败');
+    currentShare = null;
+    shareStopped = true;
+    document.querySelector('#share-viewer').srcdoc = '';
+    syncShareState();
+    status.textContent = '分享已停止，关闭弹窗后重新打开可生成新链接';
+  } catch (error) {
+    status.textContent = error instanceof Error ? error.message : '停止分享失败';
+  }
+}
+
+window.addEventListener('message', (event) => {
+  if (event.data?.type !== 'wego-viewer-ready') return;
+  document.querySelector('#share-viewer-wrap')?.classList.add('ready');
+});
 
 function showExportPanel(name) {
   document.querySelectorAll('[data-export-tab]').forEach((button) => {
@@ -419,10 +675,14 @@ function showExportPanel(name) {
     panel.hidden = panel.dataset.exportPanel !== name;
   });
   const dieline = name === 'dieline';
-  document.querySelector('#export-preview').hidden = dieline;
+  const share = name === 'share';
+  document.querySelector('#export-preview').hidden = dieline || share;
   document.querySelector('#export-dieline-preview').hidden = !dieline;
+  document.querySelector('#share-viewer-wrap').hidden = !share;
+  document.querySelector('#export-dialog .export-card').classList.toggle('share-mode', share);
   document.querySelector('.export-options').scrollTop = 0;
   if (dieline) refreshExportPreview();
+  if (share) ensureShare();
 }
 
 async function runExport(button, task) {
@@ -587,24 +847,7 @@ document.querySelector('#export-video').addEventListener('click', (event) => {
 
 document.querySelector('#export-html').addEventListener('click', (event) => {
   runExport(event.currentTarget, async () => {
-    const faces = {};
-    const layout = currentLayout();
-    for (const key of Object.keys(layout.panels)) {
-      const canvas = paintPanelCanvas(
-        state.image,
-        layout,
-        key,
-        state.placement,
-        PAPERS[state.paper].edge,
-        6,
-        state.faceImages[key],
-      );
-      faces[key] = canvas.toDataURL('image/jpeg', 0.86);
-    }
-    const fallback = faces.front || faces.label || faces.wall || faces.back;
-    for (const key of ['front', 'back', 'left', 'right', 'top', 'bottom']) {
-      if (!faces[key] && fallback) faces[key] = fallback;
-    }
+    const faces = buildPanelFaces();
     const html = exportViewerHtml({
       width: state.w,
       height: state.h,
@@ -628,6 +871,11 @@ document.querySelector('#export-copy').addEventListener('click', async () => {
     setStatus('复制失败，请在文本框里手动复制。');
   }
 });
+
+document.querySelector('#share-remove-logo').addEventListener('change', updateShareFlags);
+document.querySelector('#share-remove-watermark').addEventListener('change', updateShareFlags);
+document.querySelector('#share-copy').addEventListener('click', copyShareLink);
+document.querySelector('#share-stop').addEventListener('click', stopShare);
 document.querySelector('#zoom-in').addEventListener('click', () => zoom(0.86));
 document.querySelector('#zoom-out').addEventListener('click', () => zoom(1.16));
 document.querySelector('#reset').addEventListener('click', () => frameCamera());
@@ -925,6 +1173,12 @@ function renderModels() {
   modelHeading.hidden = libraryOpen;
   modelGrid.hidden = libraryOpen;
   if (libraryOpen) return;
+  if (!CATEGORIES.length) {
+    modelHeading.textContent = '资源库';
+    libraryHint.hidden = false;
+    libraryHint.textContent = '资源库还没有加载完成，请刷新页面重试。';
+    return;
+  }
   if (source === 'mine') {
     modelHeading.textContent = activeTag;
     loadWorks();
@@ -1104,41 +1358,80 @@ function flattenMenus(nodes, paths = []) {
   return paths;
 }
 
-async function applyAccess() {
-  const me = await fetch(`${SSO_API}/api/auth/me`, { headers: authHeaders() });
-  if (me.status === 401) {
-    logout();
+async function applyAccess(attempt = 0) {
+  try {
+    const me = await fetch(`${SSO_API}/api/auth/me`, { headers: authHeaders() });
+    if (me.status === 401) {
+      logout();
+      return false;
+    }
+    if (!me.ok) throw new Error(`登录接口返回 ${me.status}`);
+    const user = await me.json();
+    setMember(user.member);
+    document.querySelector('#user-name').textContent = user.nickname || user.username;
+    const menuResponse = await fetch(`${SSO_API}/api/auth/menus?app=wego-mockup`, { headers: authHeaders() });
+    if (menuResponse.status === 401) {
+      logout();
+      return false;
+    }
+    const menuData = await menuResponse.json();
+    const paths = new Set(flattenMenus(menuData.data));
+    document.querySelectorAll('.rail-btn').forEach((button) => {
+      button.hidden = paths.size > 0 && !paths.has(button.dataset.page);
+    });
+    const current = document.querySelector(`.rail-btn[data-page="${document.body.dataset.page}"]`);
+    if (current?.hidden) {
+      const first = document.querySelector('.rail-btn:not([hidden])');
+      if (first) showPage(first.dataset.page);
+    }
+    return true;
+  } catch (error) {
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return applyAccess(attempt + 1);
+    }
+    console.error(error);
     return false;
   }
-  const user = await me.json();
-  setMember(user.member);
-  document.querySelector('#user-name').textContent = user.nickname || user.username;
-  const menuResponse = await fetch(`${SSO_API}/api/auth/menus?app=wego-mockup`, { headers: authHeaders() });
-  const menuData = await menuResponse.json();
-  const paths = new Set(flattenMenus(menuData.data));
-  document.querySelectorAll('.rail-btn').forEach((button) => {
-    button.hidden = paths.size > 0 && !paths.has(button.dataset.page);
-  });
-  const current = document.querySelector(`.rail-btn[data-page="${document.body.dataset.page}"]`);
-  if (current?.hidden) {
-    const first = document.querySelector('.rail-btn:not([hidden])');
-    if (first) showPage(first.dataset.page);
+}
+
+async function fetchCatalog(attempt = 0) {
+  try {
+    const response = await fetch(`${API_BASE}/api/catalog`, { headers: authHeaders(), cache: 'no-store' });
+    if (response.status === 401) {
+      logout();
+      return null;
+    }
+    if (!response.ok) throw new Error(`目录接口返回 ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return fetchCatalog(attempt + 1);
+    }
+    throw error;
   }
-  return true;
 }
 
 async function initCatalog() {
-  if (!await applyAccess()) return;
-  const response = await fetch(`${API_BASE}/api/catalog`, { headers: authHeaders(), cache: 'no-store' });
-  if (response.status === 401) {
-    logout();
+  if (!await applyAccess()) {
+    modelHeading.textContent = '包装样机';
+    libraryHint.hidden = false;
+    libraryHint.textContent = '登录信息加载失败，请刷新页面重试。';
     return;
   }
-  if (!response.ok) throw new Error(`目录接口返回 ${response.status}`);
-  const data = await response.json();
-  CATEGORIES = data.categories || [];
-  MODELS = data.models || [];
-  renderModels();
+  try {
+    const data = await fetchCatalog();
+    if (!data) return;
+    CATEGORIES = data.categories || [];
+    MODELS = data.models || [];
+    renderModels();
+  } catch (error) {
+    console.error(error);
+    modelHeading.textContent = '资源库';
+    libraryHint.hidden = false;
+    libraryHint.textContent = '资源库暂时加载失败，请刷新页面重试。';
+  }
 }
 
 document.querySelector('#logout').addEventListener('click', logout);

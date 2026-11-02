@@ -210,12 +210,19 @@
           <button type="button" class="export-tab" data-export-tab="dieline">刀版</button>
           <button type="button" class="export-tab" data-export-tab="video">视频</button>
           <button type="button" class="export-tab" data-export-tab="code">代码</button>
+          <button type="button" class="export-tab" data-export-tab="share">分享</button>
           <button id="export-close" class="icon-btn export-close" type="button" aria-label="关闭">×</button>
         </div>
         <div class="export-body">
           <div class="export-stage">
             <img id="export-preview" alt="当前样机预览" />
             <canvas id="export-dieline-preview" hidden></canvas>
+            <div id="share-viewer-wrap" class="share-viewer-wrap" hidden>
+              <img id="share-viewer-fallback" alt="样机预览" />
+              <iframe id="share-viewer" title="样机预览" sandbox="allow-scripts"></iframe>
+              <div id="share-brand" class="share-brand">Built by 包装样机</div>
+              <div id="share-watermark" class="share-watermark">包装样机</div>
+            </div>
             <div id="export-video-note" class="export-video-note" hidden>正在按所选镜头录制当前盒子</div>
           </div>
           <div class="export-options">
@@ -283,6 +290,22 @@
               <button id="export-html" class="btn primary export-go" type="button">生成 HTML 代码</button>
               <textarea id="export-html-code" hidden readonly></textarea>
               <button id="export-copy" class="btn ghost compact" type="button" hidden>复制代码</button>
+            </section>
+            <section data-export-panel="share" hidden>
+              <h2>与他人分享</h2>
+              <p class="share-lead">• 与客户或同事分享你的设计。</p>
+              <label class="share-switch">
+                <input id="share-remove-logo" type="checkbox" />
+                <span>移除官方标志 <i class="info-dot" title="分享页不再显示 Built by 包装样机">?</i></span>
+              </label>
+              <label class="share-switch">
+                <input id="share-remove-watermark" type="checkbox" />
+                <span>移除水印 <i class="info-dot" title="分享页不再显示包装样机水印">?</i></span>
+              </label>
+              <input id="share-link" class="share-link" readonly placeholder="正在生成分享链接…" />
+              <button id="share-stop" class="share-stop" type="button" hidden>停止分享</button>
+              <button id="share-copy" class="btn primary export-go" type="button">复制链接</button>
+              <p id="share-status" class="export-status"></p>
             </section>
             <p id="export-status" class="export-status"></p>
           </div>
