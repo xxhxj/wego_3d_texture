@@ -386,27 +386,63 @@ function capturePreviewDataUrl() {
   return paintViewShot(renderer.domElement, 960).toDataURL('image/jpeg', 0.82);
 }
 
+function ratioValue(key) {
+  const [width, height] = String(key || '1:1').split(':').map(Number);
+  return width > 0 && height > 0 ? width / height : 1;
+}
+
+function captureExportPreview(ratio) {
+  const oldSize = renderer.getSize(new THREE.Vector2());
+  const oldAspect = camera.aspect;
+  const oldPixelRatio = renderer.getPixelRatio();
+  const edge = 900;
+  const width = ratio >= 1 ? edge : Math.round(edge * ratio);
+  const height = ratio >= 1 ? Math.round(edge / ratio) : edge;
+  try {
+    renderer.setPixelRatio(1);
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+    return paintViewShot(renderer.domElement).toDataURL('image/jpeg', 0.82);
+  } finally {
+    renderer.setPixelRatio(oldPixelRatio);
+    renderer.setSize(oldSize.x, oldSize.y, false);
+    camera.aspect = oldAspect;
+    camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+  }
+}
+
 function refreshExportPreview() {
   renderer.render(scene, camera);
-  document.querySelector('#export-preview').src = paintViewShot(renderer.domElement).toDataURL('image/jpeg', 0.7);
-  const preview = document.querySelector('#export-dieline-preview');
-  const source = renderDielineCanvas({
+  const ratioKey = document.querySelector('#export-ratio')?.value || '1:1';
+  const source = captureExportPreview(ratioValue(ratioKey));
+  const preview = document.querySelector('#export-preview');
+  preview.src = source;
+  preview.style.aspectRatio = ratioKey.replace(':', ' / ');
+  const sample2k = document.querySelector('#export-sample-2k');
+  const sample4k = document.querySelector('#export-sample-4k');
+  if (sample2k) sample2k.src = source;
+  if (sample4k) sample4k.src = source;
+  const dieline = document.querySelector('#export-dieline-preview');
+  const dielineSource = renderDielineCanvas({
     layout: currentLayout(),
     image: state.image,
     placement: state.placement,
     includeArt: choiceValue('dieline-kind') !== 'cut',
     faceImages: state.faceImages,
   });
-  preview.width = source.width;
-  preview.height = source.height;
-  preview.getContext('2d').drawImage(source, 0, 0);
+  dieline.width = dielineSource.width;
+  dieline.height = dielineSource.height;
+  dieline.getContext('2d').drawImage(dielineSource, 0, 0);
 }
 
 function openExport() {
   shareStopped = false;
+  document.querySelector('#export-ratio').value = '1:1';
   document.querySelector('#export-dialog').hidden = false;
   showExportPanel('mockup');
-  refreshExportPreview();
   setStatus('');
   if (!currentShare?.active) {
     document.querySelector('#share-link').value = '';
@@ -676,12 +712,14 @@ function showExportPanel(name) {
   });
   const dieline = name === 'dieline';
   const share = name === 'share';
+  const mockup = name === 'mockup';
   document.querySelector('#export-preview').hidden = dieline || share;
   document.querySelector('#export-dieline-preview').hidden = !dieline;
   document.querySelector('#share-viewer-wrap').hidden = !share;
+  document.querySelector('#export-ratio-wrap').hidden = !mockup;
   document.querySelector('#export-dialog .export-card').classList.toggle('share-mode', share);
   document.querySelector('.export-options').scrollTop = 0;
-  if (dieline) refreshExportPreview();
+  if (dieline || mockup) refreshExportPreview();
   if (share) ensureShare();
 }
 
@@ -753,6 +791,11 @@ document.querySelectorAll('[data-close-export]').forEach((node) => {
 document.querySelectorAll('[data-export-tab]').forEach((button) => {
   button.addEventListener('click', () => showExportPanel(button.dataset.exportTab));
 });
+document.querySelector('#export-ratio').addEventListener('change', refreshExportPreview);
+document.querySelector('#export-sample-open').addEventListener('click', () => {
+  const source = document.querySelector('#export-preview').src;
+  if (source) window.open(source, '_blank', 'noopener');
+});
 document.querySelectorAll('.choice').forEach((group) => {
   group.addEventListener('click', (event) => {
     const button = event.target.closest('button');
@@ -793,6 +836,7 @@ document.querySelector('#export-mockup').addEventListener('click', (event) => {
       setShadowVisible,
       format: choiceValue('mockup-format'),
       resolution,
+      ratio: document.querySelector('#export-ratio').value,
       withShadow: document.querySelector('#export-shadow').checked,
     });
     await saveWork();

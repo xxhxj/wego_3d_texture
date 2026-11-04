@@ -204,7 +204,7 @@
     <input id="face-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
     <div id="export-dialog" class="modal" hidden>
       <div class="modal-backdrop" data-close-export></div>
-      <div class="modal-card export-card" role="dialog" aria-modal="true" aria-labelledby="export-title">
+      <div class="modal-card export-card" role="dialog" aria-modal="true" aria-label="导出">
         <div class="export-tabs">
           <button type="button" class="export-tab active" data-export-tab="mockup">样机</button>
           <button type="button" class="export-tab" data-export-tab="dieline">刀版</button>
@@ -223,24 +223,51 @@
               <div id="share-brand" class="share-brand">Built by 包装样机</div>
               <div id="share-watermark" class="share-watermark">包装样机</div>
             </div>
+            <label id="export-ratio-wrap" class="export-ratio">比例
+              <select id="export-ratio">
+                <option value="1:1">1 : 1</option>
+                <option value="16:9">16 : 9</option>
+                <option value="9:16">9 : 16</option>
+                <option value="4:3">4 : 3</option>
+                <option value="3:4">3 : 4</option>
+              </select>
+            </label>
             <div id="export-video-note" class="export-video-note" hidden>正在按所选镜头录制当前盒子</div>
           </div>
           <div class="export-options">
             <section data-export-panel="mockup">
-              <h2 id="export-title">样机</h2>
-              <label class="switch"><input id="export-shadow" type="checkbox" checked /> 带地面阴影导出</label>
+              <div class="export-samples">
+                <div class="export-sample">
+                  <span class="sample-tag">2K</span>
+                  <img id="export-sample-2k" alt="2K 渲染示例" />
+                </div>
+                <div class="export-sample">
+                  <span class="sample-tag">4K</span>
+                  <img id="export-sample-4k" alt="4K 渲染示例" />
+                </div>
+                <button id="export-sample-open" class="sample-zoom" type="button" aria-label="查看大图">↗</button>
+              </div>
+              <p class="export-tech">
+                使用独立开发的逼真渲染技术。
+                <a href="https://github.com/xxhxj/wego_3d_texture" target="_blank" rel="noreferrer">了解更多 ↗</a>
+              </p>
+              <label class="switch export-shadow-switch">
+                <input id="export-shadow" type="checkbox" />带地面阴影导出
+              </label>
               <div class="option-label">格式与质量</div>
               <div class="choice" data-choice="mockup-format">
-                <button type="button" data-value="jpg">JPG</button>
-                <button type="button" class="active" data-value="png">PNG</button>
+                <button type="button" class="active" data-value="jpg">JPG</button>
+                <button type="button" data-value="png">PNG</button>
               </div>
               <div class="choice" data-choice="mockup-size">
                 <button type="button" class="active" data-value="2k">2K</button>
                 <button type="button" data-value="4k">4K</button>
                 <button type="button" data-value="8k" data-member="1">8K</button>
               </div>
-              <p class="hint">2K 足够预览，4K / 8K 更清晰，导出会稍慢。</p>
-              <button id="export-mockup" class="btn primary export-go" type="button">渲染导出</button>
+              <p class="hint">*高清，渲染速度快</p>
+              <button id="export-mockup" class="btn primary export-go" type="button">
+                <span class="export-spark">✦</span>渲染导出
+              </button>
             </section>
             <section data-export-panel="dieline" hidden>
               <h2>刀版</h2>

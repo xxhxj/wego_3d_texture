@@ -797,7 +797,7 @@ body[data-page="upload"] .editor { display: none; }
 
 .export-card {
   position: relative;
-  width: min(920px, 100%);
+  width: min(1180px, 100%);
   max-height: min(720px, calc(100vh - 48px));
   background: #fff;
   border-radius: 18px;
@@ -808,10 +808,13 @@ body[data-page="upload"] .editor { display: none; }
 }
 
 .export-tabs {
+  position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 8px 12px 0;
+  height: 64px;
+  padding: 0 56px;
   border-bottom: 1px solid #eee;
 }
 
@@ -830,18 +833,24 @@ body[data-page="upload"] .editor { display: none; }
   border-bottom-color: var(--purple);
 }
 
-.export-close { margin-left: auto; }
+.export-close {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 0;
+}
 
 .export-body {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
+  grid-template-columns: minmax(0, 1fr) 380px;
   min-height: 0;
 }
 
 .export-stage {
   position: relative;
-  min-height: 180px;
-  max-height: 42vh;
+  min-height: 520px;
+  max-height: 64vh;
   background: radial-gradient(ellipse at center, #f3f3f3 0%, #d5d5d5 78%);
   display: grid;
   place-items: center;
@@ -851,7 +860,7 @@ body[data-page="upload"] .editor { display: none; }
 
 #export-preview, #export-dieline-preview {
   max-width: 100%;
-  max-height: calc(42vh - 36px);
+  max-height: calc(64vh - 36px);
   width: auto;
   height: auto;
   object-fit: contain;
@@ -863,7 +872,7 @@ body[data-page="upload"] .editor { display: none; }
 }
 
 .export-options {
-  padding: 18px 18px 16px;
+  padding: 28px 28px 22px;
   overflow: auto;
 }
 
@@ -919,19 +928,148 @@ body[data-page="upload"] .editor { display: none; }
   font-size: 13px;
 }
 
-.export-go { width: 100%; margin-top: 16px; }
+.export-go { width: 100%; height: 46px; margin-top: 18px; font-size: 15px; }
 
 .export-status { min-height: 1.2em; color: var(--muted); font-size: 12px; }
 
+/* 导出弹窗：对齐 Pacdora 样例 */
+.export-samples {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  height: 150px;
+  margin-bottom: 12px;
+}
+.export-sample {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #dff2fa, #cfe9f7);
+}
+.export-sample img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.sample-tag {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 1;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+.sample-zoom {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(28, 28, 31, 0.72);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sample-zoom:hover { background: rgba(28, 28, 31, 0.9); }
+
+.export-tech {
+  margin: 0 0 14px;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.export-tech a {
+  color: var(--purple);
+  text-decoration: none;
+}
+.export-tech a:hover { text-decoration: underline; }
+
+.export-shadow-switch {
+  margin: 14px 0 12px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.export-shadow-switch input {
+  appearance: none;
+  width: 38px;
+  height: 22px;
+  flex: none;
+  border-radius: 999px;
+  background: #d9d9d9;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.export-shadow-switch input::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  transition: left 0.2s ease;
+}
+.export-shadow-switch input:checked { background: var(--purple); }
+.export-shadow-switch input:checked::after { left: 19px; }
+
+.export-options .choice { gap: 8px; }
+.export-options .choice button {
+  min-height: 42px;
+  flex: 1;
+  font-size: 14px;
+  border-radius: 8px;
+}
+.export-spark {
+  margin-right: 6px;
+  color: #ffe27a;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.export-ratio {
+  position: absolute;
+  left: 18px;
+  bottom: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #e4e0da;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.export-ratio[hidden] { display: none; }
+.export-ratio select {
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 /* 分享 */
 .export-card.share-mode { width: min(1180px, 100%); }
-.share-mode .export-tabs { position: relative; justify-content: center; padding-right: 48px; }
-.share-mode .export-close { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); margin-left: 0; }
-.share-mode .export-body { grid-template-columns: minmax(0, 1fr) 380px; }
-.share-mode .export-stage { min-height: 520px; max-height: 64vh; padding: 0; }
-.share-mode .export-options { padding: 28px 28px 20px; }
+.share-mode .export-stage { padding: 0; }
 .share-mode .export-options h2 { font-size: 20px; margin-bottom: 10px; }
-.share-mode .export-go { height: 44px; margin-top: 18px; }
 
 .share-viewer-wrap {
   position: absolute;
